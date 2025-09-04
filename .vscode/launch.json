@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch Dungeogo",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/server",
+            "env": {
+                "PORT": "8080",
+                "BIND_ADDRESS": "localhost",
+                "DATABASE_URL": "postgres://user:password@localhost/dbname",
+                "MAX_CONNECTIONS": "100",
+                "MAX_THREADS": "10"
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+        }
+    ]
+}
