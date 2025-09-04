@@ -107,4 +107,11 @@ echo "go test ./pkg/game/items -v        # Item tests"
 echo "go test ./pkg/commands -v          # Command tests (parser only, no DB)"
 echo
 echo -e "${BLUE}For database integration tests:${NC}"
-echo "Set up PostgreSQL and run: go test ./pkg/commands -v"
+echo "./test-with-db.sh                      # Run all tests with containerized PostgreSQL"
+echo "./test-with-db.sh -c                   # Run with coverage analysis"
+echo "./test-with-db.sh ./pkg/persistence... # Run specific database tests"
+echo
+echo -e "${BLUE}Manual database testing:${NC}"
+echo "docker-compose -f docker-compose.test.yml up -d  # Start test DB"
+echo "go test ./pkg/persistence/postgres -v            # Run persistence tests"
+echo "go test ./pkg/integration -v                     # Run integration tests"

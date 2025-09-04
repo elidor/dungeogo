@@ -3,6 +3,7 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,16 +19,31 @@ func setupTestDB(t *testing.T) *PostgreSQLRepositoryManager {
 	// Generate unique database name
 	testDBName := fmt.Sprintf("dungeogo_test_%d", time.Now().UnixNano())
 
-	// Connect to postgres to create test database
-	adminDB, err := sql.Open("postgres", "postgres://localhost/postgres?sslmode=disable")
-	if err != nil {
-		t.Skipf("Skipping database tests - cannot connect to postgres: %v", err)
-		return nil
+	// Try containerized postgres first (port 5433), then local postgres (port 5432)
+	adminConnStrings := []string{
+		"postgres://testuser:testpass@localhost:5433/postgres?sslmode=disable", // Docker container
+		"postgres://localhost/postgres?sslmode=disable",                        // Local postgres
 	}
 
-	if err := adminDB.Ping(); err != nil {
-		adminDB.Close()
-		t.Skipf("Skipping database tests - postgres not available: %v", err)
+	var adminDB *sql.DB
+	var err error
+	var connStr string
+
+	for _, cs := range adminConnStrings {
+		adminDB, err = sql.Open("postgres", cs)
+		if err != nil {
+			continue
+		}
+		if err = adminDB.Ping(); err != nil {
+			adminDB.Close()
+			continue
+		}
+		connStr = cs
+		break
+	}
+
+	if adminDB == nil {
+		t.Skipf("Skipping database tests - postgres not available (tried containerized and local)")
 		return nil
 	}
 
@@ -40,8 +56,15 @@ func setupTestDB(t *testing.T) *PostgreSQLRepositoryManager {
 	}
 	adminDB.Close()
 
-	// Connect to test database
-	testDBURL := fmt.Sprintf("postgres://localhost/%s?sslmode=disable", testDBName)
+	// Connect to test database using the same connection parameters
+	var testDBURL string
+	if strings.Contains(connStr, ":5433") {
+		// Docker container
+		testDBURL = fmt.Sprintf("postgres://testuser:testpass@localhost:5433/%s?sslmode=disable", testDBName)
+	} else {
+		// Local postgres
+		testDBURL = fmt.Sprintf("postgres://localhost/%s?sslmode=disable", testDBName)
+	}
 	repoManager, err := NewPostgreSQLRepositoryManager(testDBURL)
 	if err != nil {
 		t.Fatalf("Failed to create repository manager: %v", err)
@@ -126,8 +149,28 @@ func createTestSchema(repoManager *PostgreSQLRepositoryManager) error {
 }
 
 func cleanupTestDatabase(dbName string) {
-	db, err := sql.Open("postgres", "postgres://localhost/postgres?sslmode=disable")
-	if err != nil {
+	// Try containerized postgres first, then local postgres
+	adminConnStrings := []string{
+		"postgres://testuser:testpass@localhost:5433/postgres?sslmode=disable", // Docker container
+		"postgres://localhost/postgres?sslmode=disable",                        // Local postgres
+	}
+
+	var db *sql.DB
+	var err error
+
+	for _, cs := range adminConnStrings {
+		db, err = sql.Open("postgres", cs)
+		if err != nil {
+			continue
+		}
+		if err = db.Ping(); err != nil {
+			db.Close()
+			continue
+		}
+		break
+	}
+
+	if db == nil {
 		return
 	}
 	defer db.Close()
