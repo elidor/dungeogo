@@ -14,6 +14,7 @@ import (
 	"github.com/elidor/dungeogo/pkg/game/player"
 	"github.com/elidor/dungeogo/pkg/server"
 	"github.com/elidor/dungeogo/pkg/testutil"
+	"github.com/google/uuid"
 )
 
 func TestServerIntegration_BasicConnection(t *testing.T) {
@@ -185,7 +186,7 @@ func TestServerIntegration_GameEngineCommands(t *testing.T) {
 		}
 
 		if !found {
-			t.Errorf("Command '%s' expected to contain '%s', got: %v", 
+			t.Errorf("Command '%s' expected to contain '%s', got: %v",
 				test.input, test.expected, responses)
 		}
 	}
@@ -370,19 +371,19 @@ func TestServerIntegration_ConcurrentClients(t *testing.T) {
 
 func createTestPlayer() *player.Player {
 	player := testutil.CreateTestPlayer()
-	player.ID = "test-player-" + generateTestUUID()
+	player.ID = generateTestUUID()
 	return player
 }
 
 func createTestCharacter(playerID string) *character.Character {
 	char := testutil.CreateTestCharacter(playerID)
-	char.ID = "test-char-" + generateTestUUID()
+	char.ID = generateTestUUID()
 	return char
 }
 
 func createTestItemInstance(templateID, ownerID string) *items.ItemInstance {
 	item := testutil.CreateTestItemInstance(templateID, ownerID)
-	item.ID = "test-item-" + generateTestUUID()
+	item.ID = generateTestUUID()
 	return item
 }
 
@@ -394,6 +395,5 @@ func generateTestID(i int) string {
 }
 
 func generateTestUUID() string {
-	testIDCounter++
-	return fmt.Sprintf("uuid-%d-%d", time.Now().UnixNano(), testIDCounter)
+	return uuid.New().String()
 }
