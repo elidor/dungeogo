@@ -10,6 +10,7 @@ type PlayerRepository interface {
 	CreatePlayer(player *player.Player) error
 	GetPlayer(playerID string) (*player.Player, error)
 	GetPlayerByUsername(username string) (*player.Player, error)
+	GetPlayerByEmail(email string) (*player.Player, error)
 	UpdatePlayer(player *player.Player) error
 	UpdatePlayerLogin(playerID string) error
 	DeletePlayer(playerID string) error

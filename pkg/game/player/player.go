@@ -2,6 +2,8 @@ package player
 
 import (
 	"time"
+	
+	"github.com/google/uuid"
 )
 
 type Player struct {
@@ -49,10 +51,12 @@ type PlayerPrefs struct {
 
 func NewPlayer(username, email, passwordHash string) *Player {
 	return &Player{
+		ID:            uuid.New().String(),
 		Username:      username,
 		Email:         email,
 		PasswordHash:  passwordHash,
 		CreatedAt:     time.Now(),
+		LastLogin:     time.Now(),
 		AccountStatus: AccountActive,
 		MaxCharacters: 5,
 		Preferences: PlayerPrefs{

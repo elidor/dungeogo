@@ -3,8 +3,11 @@ package server
 import (
 	"fmt"
 	"strings"
+	"regexp"
 	
+	"golang.org/x/crypto/bcrypt"
 	"github.com/elidor/dungeogo/pkg/game/character"
+	"github.com/elidor/dungeogo/pkg/game/player"
 	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 )
 
@@ -34,7 +37,16 @@ func (sh *SessionHandler) HandleClient(client *Client) {
 	client.SendPrompt("> ")
 	
 	for client.IsConnected() {
-		line, err := client.ReadLine()
+		var line string
+		var err error
+		
+		// Use password reading for sensitive input
+		if client.GetState() == StateAuthenticating || client.GetState() == StateConfirmingPassword {
+			line, err = client.ReadPassword()
+		} else {
+			line, err = client.ReadLine()
+		}
+		
 		if err != nil {
 			fmt.Printf("Error reading from client %s: %v\n", client.GetID(), err)
 			break
@@ -45,6 +57,10 @@ func (sh *SessionHandler) HandleClient(client *Client) {
 			sh.handleLogin(client, line)
 		case StateAuthenticating:
 			sh.handlePasswordAuth(client, line)
+		case StateCreatingAccount:
+			sh.handleAccountCreation(client, line)
+		case StateConfirmingPassword:
+			sh.handlePasswordConfirmation(client, line)
 		case StateCharacterSelection:
 			sh.handleCharacterSelection(client, line)
 		case StateInGame:
@@ -61,16 +77,23 @@ func (sh *SessionHandler) handleLogin(client *Client, username string) {
 		return
 	}
 	
+	fmt.Printf("Login attempt for client %s: username='%s'\n", client.GetID(), username)
+	
 	// Check if player exists
 	existingPlayer, err := sh.repoManager.Players().GetPlayerByUsername(username)
 	if err != nil {
+		fmt.Printf("Player lookup failed for client %s, username='%s': %v\n", client.GetID(), username, err)
 		// New player - create account
-		client.Send("New player! Please choose a password:")
-		client.SendPrompt("Password: ")
-		client.SetState(StateAuthenticating)
-		// Store username temporarily - in real implementation, use session data
+		client.SetTempUsername(username)
+		client.Send("New player! Creating account for: " + username)
+		client.Send("Please enter your email address:")
+		client.SendPrompt("Email: ")
+		client.SetState(StateCreatingAccount)
 		return
 	}
+	
+	fmt.Printf("Found existing player for client %s: username='%s', ID='%s'\n", 
+		client.GetID(), username, existingPlayer.ID)
 	
 	if !existingPlayer.IsActive() {
 		client.Send("Your account has been suspended. Please contact an administrator.")
@@ -79,7 +102,6 @@ func (sh *SessionHandler) handleLogin(client *Client, username string) {
 	}
 	
 	client.Send("Please enter your password:")
-	client.SendPrompt("Password: ")
 	client.SetState(StateAuthenticating)
 	// Store player ID temporarily
 	client.SetPlayerID(existingPlayer.ID)
@@ -109,8 +131,9 @@ func (sh *SessionHandler) handlePasswordAuth(client *Client, password string) {
 		return
 	}
 	
-	// In real implementation, use bcrypt or similar
-	if existingPlayer.PasswordHash != password {
+	// Verify password using bcrypt
+	err = bcrypt.CompareHashAndPassword([]byte(existingPlayer.PasswordHash), []byte(password))
+	if err != nil {
 		client.Send("Invalid password.")
 		client.Close()
 		return
@@ -281,4 +304,115 @@ func (sh *SessionHandler) createCharacter(client *Client, name, raceStr, classSt
 
 func (sh *SessionHandler) deleteCharacter(client *Client, name string) {
 	client.Send("Character deletion not implemented yet.")
+}
+
+// handleAccountCreation handles the account creation process
+func (sh *SessionHandler) handleAccountCreation(client *Client, input string) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		client.Send("Email cannot be empty. Please enter your email address:")
+		client.SendPrompt("Email: ")
+		return
+	}
+	
+	// Basic email validation
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	if !emailRegex.MatchString(input) {
+		client.Send("Invalid email format. Please enter a valid email address:")
+		client.SendPrompt("Email: ")
+		return
+	}
+	
+	// Check if email is already in use
+	existingPlayer, err := sh.repoManager.Players().GetPlayerByEmail(input)
+	if err == nil && existingPlayer != nil {
+		client.Send("An account with this email already exists.")
+		client.Send("Please try logging in or use a different email address.")
+		client.Close()
+		return
+	}
+	
+	client.SetTempEmail(input)
+	client.Send("Please choose a password (minimum 6 characters):")
+	client.SetState(StateConfirmingPassword)
+}
+
+// handlePasswordConfirmation handles password input and confirmation
+func (sh *SessionHandler) handlePasswordConfirmation(client *Client, password string) {
+	password = strings.TrimSpace(password)
+	
+	fmt.Printf("Password confirmation debug - Client %s: received password length=%d\n", client.GetID(), len(password))
+	
+	if client.GetTempPassword() == "" {
+		// First password entry
+		fmt.Printf("First password entry for client %s\n", client.GetID())
+		if len(password) < 6 {
+			client.Send("Password must be at least 6 characters long.")
+			client.Send("Please choose a password (minimum 6 characters):")
+			return
+		}
+		
+		client.SetTempPassword(password)
+		fmt.Printf("Stored password for client %s, length=%d\n", client.GetID(), len(password))
+		client.Send("Please confirm your password:")
+		return
+	}
+	
+	// Password confirmation
+	storedPassword := client.GetTempPassword()
+	fmt.Printf("Password confirmation for client %s: stored=%d chars, entered=%d chars, match=%v\n", 
+		client.GetID(), len(storedPassword), len(password), storedPassword == password)
+	
+	if storedPassword != password {
+		client.Send("Passwords do not match.")
+		client.SetTempPassword("") // Clear stored password
+		client.Send("Please choose a password (minimum 6 characters):")
+		return
+	}
+	
+	// Create the account
+	sh.createAccount(client)
+}
+
+// createAccount creates a new player account
+func (sh *SessionHandler) createAccount(client *Client) {
+	username := client.GetTempUsername()
+	email := client.GetTempEmail() 
+	password := client.GetTempPassword()
+	
+	fmt.Printf("Creating account for client %s: username=%s, email=%s, password_len=%d\n", 
+		client.GetID(), username, email, len(password))
+	
+	// Hash the password using bcrypt
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		fmt.Printf("Failed to hash password for client %s: %v\n", client.GetID(), err)
+		client.Send("Failed to create account due to internal error.")
+		client.Close()
+		return
+	}
+	passwordHash := string(hashedPassword)
+	
+	// Create new player
+	newPlayer := player.NewPlayer(username, email, passwordHash)
+	fmt.Printf("Created player object for client %s: ID=%s\n", client.GetID(), newPlayer.ID)
+	
+	err = sh.repoManager.Players().CreatePlayer(newPlayer)
+	if err != nil {
+		fmt.Printf("Failed to create player in database for client %s: %v\n", client.GetID(), err)
+		client.Send("Failed to create account. Username might already be taken.")
+		client.Close()
+		return
+	}
+	
+	fmt.Printf("Successfully created account for client %s: %s\n", client.GetID(), username)
+	
+	// Clear temporary data
+	client.ClearTempData()
+	
+	// Set player ID and continue to character selection
+	client.SetPlayerID(newPlayer.ID)
+	client.Send(fmt.Sprintf("Account created successfully! Welcome to DungeoGo, %s!", username))
+	client.SetState(StateCharacterSelection)
+	sh.showCharacterMenu(client)
 }

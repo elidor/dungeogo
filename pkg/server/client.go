@@ -17,6 +17,9 @@ type Client struct {
 	characterID string
 	state      ClientState
 	lastActive time.Time
+	tempUsername string // For storing username during account creation
+	tempPassword string // For storing password during confirmation
+	tempEmail    string // For storing email during account creation
 	mutex      sync.RWMutex
 }
 
@@ -25,6 +28,8 @@ type ClientState int
 const (
 	StateConnected ClientState = iota
 	StateAuthenticating
+	StateCreatingAccount
+	StateConfirmingPassword
 	StateCharacterSelection
 	StateInGame
 	StateDisconnecting
@@ -88,6 +93,62 @@ func (c *Client) ReadLine() (string, error) {
 	if len(line) > 0 && line[len(line)-1] == '\r' {
 		line = line[:len(line)-1]
 	}
+	
+	return line, nil
+}
+
+// ReadPassword reads a password from the client with echo disabled
+func (c *Client) ReadPassword() (string, error) {
+	c.updateLastActive()
+	
+	// Send telnet command to disable echo
+	// IAC WILL ECHO tells the client we (server) will handle echoing
+	_, err := c.conn.Write([]byte{255, 251, 1}) // IAC WILL ECHO
+	if err != nil {
+		return "", err
+	}
+	
+	// Read the password, handling potential telnet control sequences
+	var line string
+	for {
+		char, err := c.reader.ReadByte()
+		if err != nil {
+			// Re-enable echo before returning error
+			c.conn.Write([]byte{255, 252, 1}) // IAC WONT ECHO
+			return "", err
+		}
+		
+		// Handle telnet IAC (Interpret As Command) sequences
+		if char == 255 { // IAC
+			// Read the next two bytes to complete the telnet sequence
+			c.reader.ReadByte() // command
+			c.reader.ReadByte() // option
+			continue // Skip telnet control sequences
+		}
+		
+		// End of line
+		if char == '\n' {
+			break
+		}
+		
+		// Skip carriage return
+		if char == '\r' {
+			continue
+		}
+		
+		// Add normal character to password
+		line += string(char)
+	}
+	
+	// Re-enable echo - tell client we won't handle echoing anymore
+	_, err = c.conn.Write([]byte{255, 252, 1}) // IAC WONT ECHO
+	if err != nil {
+		return "", err
+	}
+	
+	// Send a newline to the client since they won't see the echo
+	c.writer.WriteString("\r\n")
+	c.writer.Flush()
 	
 	return line, nil
 }
@@ -171,4 +232,49 @@ func (c *Client) IsIdle(timeout time.Duration) bool {
 
 func (c *Client) GetRemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
+}
+
+// Temporary data getters/setters for account creation
+func (c *Client) GetTempUsername() string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tempUsername
+}
+
+func (c *Client) SetTempUsername(username string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempUsername = username
+}
+
+func (c *Client) GetTempPassword() string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tempPassword
+}
+
+func (c *Client) SetTempPassword(password string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempPassword = password
+}
+
+func (c *Client) GetTempEmail() string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tempEmail
+}
+
+func (c *Client) SetTempEmail(email string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempEmail = email
+}
+
+func (c *Client) ClearTempData() {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempUsername = ""
+	c.tempPassword = ""
+	c.tempEmail = ""
 }

@@ -87,7 +87,7 @@ CREATE INDEX idx_characters_player_id ON characters(player_id);
 CREATE INDEX idx_characters_name ON characters(name);
 CREATE INDEX idx_item_instances_owner ON item_instances(owner_id);
 CREATE INDEX idx_item_instances_template ON item_instances(template_id);
-CREATE INDEX idx_world_events_active ON world_events(start_time, end_time) WHERE end_time IS NULL OR end_time > NOW();
+CREATE INDEX idx_world_events_active ON world_events(start_time, end_time);
 
 -- Create a sample admin player for testing
 INSERT INTO players (username, email, password_hash, account_status) VALUES 
