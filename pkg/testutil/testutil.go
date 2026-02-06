@@ -131,7 +131,7 @@ func createTestSchema(repoManager *postgres.PostgreSQLRepositoryManager) error {
 	CREATE TABLE item_instances (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		template_id VARCHAR(100) NOT NULL,
-		owner_id UUID NOT NULL,
+		owner_id VARCHAR(100) NOT NULL,
 		quantity INTEGER DEFAULT 1,
 		durability INTEGER DEFAULT 100,
 		enchantments JSONB NOT NULL DEFAULT '[]',
@@ -160,11 +160,11 @@ func getDBFromRepoManager(repoManager *postgres.PostgreSQLRepositoryManager) *sq
 // CreateTestPlayer creates a test player for use in tests
 func CreateTestPlayer() *player.Player {
 	return &player.Player{
-		ID:           uuid.New().String(),
-		Username:     "testuser",
-		Email:        "test@example.com",
-		PasswordHash: "testhash",
-		CreatedAt:    time.Now(),
+		ID:            uuid.New().String(),
+		Username:      "testuser",
+		Email:         "test@example.com",
+		PasswordHash:  "testhash",
+		CreatedAt:     time.Now(),
 		AccountStatus: player.AccountActive,
 		MaxCharacters: 5,
 		Preferences: player.PlayerPrefs{
@@ -181,24 +181,24 @@ func CreateTestPlayer() *player.Player {
 func CreateTestCharacter(playerID string) *character.Character {
 	race, _ := character.GetRaceByID("human")
 	class, _ := character.GetClassByID("warrior")
-	
+
 	char := character.NewCharacter(playerID, "TestChar", race, class)
 	char.ID = uuid.New().String()
-	
+
 	return char
 }
 
 // CreateTestItemInstance creates a test item instance
 func CreateTestItemInstance(templateID, ownerID string) *items.ItemInstance {
 	return &items.ItemInstance{
-		ID:           uuid.New().String(),
-		TemplateID:   templateID,
-		OwnerID:      ownerID,
-		Quantity:     1,
-		Durability:   100,
-		Enchantments: []items.Enchantment{},
+		ID:            uuid.New().String(),
+		TemplateID:    templateID,
+		OwnerID:       ownerID,
+		Quantity:      1,
+		Durability:    100,
+		Enchantments:  []items.Enchantment{},
 		Modifications: make(map[string]interface{}),
-		CreatedAt:    time.Now(),
+		CreatedAt:     time.Now(),
 	}
 }
 

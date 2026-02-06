@@ -13,7 +13,7 @@ import (
 // SetupTestDatabase creates a test database with schema
 func SetupTestDatabase(t *testing.T) (*sql.DB, string) {
 	// Generate unique database name
-	testDBName := fmt.Sprintf("dungeogo_test_%d", 
+	testDBName := fmt.Sprintf("dungeogo_test_%d",
 		time.Now().UnixNano())
 
 	// Try containerized postgres first (port 5433), then local postgres (port 5432)
@@ -141,7 +141,7 @@ func createSchema(db *sql.DB) error {
 	CREATE TABLE item_instances (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		template_id VARCHAR(100) NOT NULL,
-		owner_id UUID NOT NULL,
+		owner_id VARCHAR(100) NOT NULL,
 		quantity INTEGER DEFAULT 1,
 		durability INTEGER DEFAULT 100,
 		enchantments JSONB NOT NULL DEFAULT '[]',
@@ -226,4 +226,3 @@ func cleanupDatabase(dbName string) {
 	// Drop the database
 	db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
 }
-
