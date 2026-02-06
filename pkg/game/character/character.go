@@ -71,6 +71,7 @@ type CharacterAppearance struct {
 
 func NewCharacter(playerID, name string, race *Race, class *Class) *Character {
 	stats := calculateStartingStats(race, class)
+	now := time.Now()
 
 	return &Character{
 		ID:         uuid.New().String(),
@@ -81,7 +82,8 @@ func NewCharacter(playerID, name string, race *Race, class *Class) *Character {
 		Stats:      stats,
 		Skills:     NewSkillSet(),
 		State:      CharacterAlive,
-		CreatedAt:  time.Now(),
+		CreatedAt:  now,
+		LastPlayed: now,
 		Level:      1,
 		Experience: 0,
 		DeathCount: 0,

@@ -1,6 +1,6 @@
 # DungeoGo Makefile
 
-.PHONY: test test-unit test-db test-coverage build clean help docker-up docker-down
+.PHONY: test test-unit test-db test-coverage build clean help docker-up docker-down run
 
 # Default target
 help:
@@ -50,6 +50,7 @@ build:
 
 # Build and run the server
 run: build
+	./ensure-dev-db.sh
 	./bin/dungeogo
 
 # Clean build artifacts
