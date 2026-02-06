@@ -32,7 +32,11 @@ func NewSessionHandler(repoManager interfaces.RepositoryManager, gameEngine Game
 }
 
 func (sh *SessionHandler) HandleClient(client *Client) {
-	defer client.Close()
+	defer func() {
+		fmt.Printf("Client disconnected: id=%s playerID=%s characterID=%s state=%d\n",
+			client.GetID(), client.GetPlayerID(), client.GetCharacterID(), client.GetState())
+		client.Close()
+	}()
 
 	// Welcome message
 	client.Send("Welcome to DungeoGo!")
@@ -161,7 +165,7 @@ func (sh *SessionHandler) handleCharacterSelection(client *Client, input string)
 	input = strings.TrimSpace(input)
 	parts := strings.Fields(input)
 
-	if len(parts) == 0 {
+	if len(parts) == 0 || isMenuHelpInput(input) {
 		sh.showCharacterMenu(client)
 		return
 	}
@@ -307,6 +311,11 @@ func formatLastPlayed(raw string) string {
 	return raw
 }
 
+func isMenuHelpInput(input string) bool {
+	v := strings.TrimSpace(strings.ToLower(input))
+	return v == "?" || v == "help"
+}
+
 func sortCharacterSummariesByName(characters []*interfaces.CharacterSummary) []*interfaces.CharacterSummary {
 	sorted := make([]*interfaces.CharacterSummary, len(characters))
 	copy(sorted, characters)
@@ -367,6 +376,27 @@ func (sh *SessionHandler) startCharacterSelectByNumber(client *Client) {
 
 func (sh *SessionHandler) handleCharacterSelectByNumber(client *Client, input string) {
 	input = strings.TrimSpace(input)
+	if isMenuHelpInput(input) {
+		characters, err := sh.getSortedCharactersForPlayer(client)
+		if err != nil {
+			client.Send("Error retrieving characters.")
+			client.SetState(StateCharacterSelection)
+			sh.showCharacterMenu(client)
+			return
+		}
+		if len(characters) == 0 {
+			client.Send("You have no characters to select. Use 'create' first.")
+			client.SetState(StateCharacterSelection)
+			sh.showCharacterMenu(client)
+			return
+		}
+		client.Send("\n--- Character Select ---")
+		client.Send("Type a character number, or 'cancel' to return.")
+		sh.showNumberedCharacterList(client, characters)
+		client.SendPrompt("Select #: ")
+		return
+	}
+
 	if strings.EqualFold(input, "cancel") {
 		client.SetState(StateCharacterSelection)
 		client.ClearTempMenuData()
@@ -450,6 +480,25 @@ func (sh *SessionHandler) startCharacterCreation(client *Client) {
 
 func (sh *SessionHandler) handleCharacterCreation(client *Client, input string) {
 	input = strings.TrimSpace(input)
+	if isMenuHelpInput(input) {
+		switch client.GetTempCreationStep() {
+		case 0:
+			client.Send("Enter character name (3-20 letters/numbers):")
+			client.SendPrompt("Name: ")
+		case 1:
+			client.Send("Choose race: human, elf, dwarf")
+			client.SendPrompt("Race: ")
+		case 2:
+			client.Send("Choose class: warrior, mage, rogue")
+			client.SendPrompt("Class: ")
+		case 3:
+			client.Send(fmt.Sprintf("Create character '%s' as %s %s? (yes/no)",
+				client.GetTempCharacterName(), client.GetTempCharacterRace(), client.GetTempCharacterClass()))
+			client.SendPrompt("Confirm: ")
+		}
+		return
+	}
+
 	if strings.EqualFold(input, "cancel") {
 		client.ClearTempCharacterData()
 		client.SetState(StateCharacterSelection)
@@ -558,6 +607,29 @@ func (sh *SessionHandler) startCharacterDeleteByNumber(client *Client) {
 
 func (sh *SessionHandler) handleCharacterDeleteByNumber(client *Client, input string) {
 	input = strings.TrimSpace(input)
+	if isMenuHelpInput(input) {
+		if client.GetTempMenuStep() == 0 {
+			characters, err := sh.getSortedCharactersForPlayer(client)
+			if err != nil {
+				client.Send("Error retrieving characters.")
+				client.ClearTempMenuData()
+				client.SetState(StateCharacterSelection)
+				sh.showCharacterMenu(client)
+				return
+			}
+			client.Send("\n--- Character Delete ---")
+			client.Send("Choose a character number to delete, or 'cancel' to return.")
+			sh.showNumberedCharacterList(client, characters)
+			client.SendPrompt("Delete #: ")
+			return
+		}
+
+		client.Send(fmt.Sprintf("To confirm deletion, type the character name exactly: %s",
+			client.GetTempTargetCharacterName()))
+		client.SendPrompt("Confirm Name: ")
+		return
+	}
+
 	if strings.EqualFold(input, "cancel") {
 		client.ClearTempMenuData()
 		client.SetState(StateCharacterSelection)
