@@ -62,10 +62,10 @@ clean:
 
 # Docker management
 docker-up:
-	docker-compose -f docker-compose.test.yml up -d
+	./test-with-db.sh --start-only
 
 docker-down:
-	docker-compose -f docker-compose.test.yml down -v
+	./test-with-db.sh -s
 
 # Continuous testing (watch for changes)
 test-watch:
