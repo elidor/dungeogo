@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 	"time"
-	
+
 	"github.com/google/uuid"
 )
 
@@ -42,13 +42,13 @@ func (cm *ConnectionManager) Start(address string) error {
 	if err != nil {
 		return fmt.Errorf("failed to start listener: %w", err)
 	}
-	
+
 	cm.listener = listener
 	cm.running = true
-	
+
 	// Start cleanup goroutine
 	go cm.cleanupClients()
-	
+
 	// Accept connections
 	for cm.running {
 		conn, err := listener.Accept()
@@ -59,45 +59,45 @@ func (cm *ConnectionManager) Start(address string) error {
 			fmt.Printf("Failed to accept connection: %v\n", err)
 			continue
 		}
-		
+
 		if cm.getClientCount() >= cm.maxClients {
 			conn.Write([]byte("Server is full. Please try again later.\r\n"))
 			conn.Close()
 			continue
 		}
-		
+
 		client := cm.createClient(conn)
 		go cm.handler.HandleClient(client)
 	}
-	
+
 	return nil
 }
 
 func (cm *ConnectionManager) Stop() error {
 	cm.running = false
-	
+
 	if cm.listener != nil {
 		cm.listener.Close()
 	}
-	
+
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	
+
 	for _, client := range cm.clients {
 		client.Close()
 	}
-	
+
 	return nil
 }
 
 func (cm *ConnectionManager) createClient(conn net.Conn) *Client {
 	clientID := uuid.New().String()
 	client := NewClient(clientID, conn)
-	
+
 	cm.mutex.Lock()
 	cm.clients[clientID] = client
 	cm.mutex.Unlock()
-	
+
 	fmt.Printf("New client connected: %s from %s\n", clientID, conn.RemoteAddr())
 	return client
 }
@@ -105,28 +105,28 @@ func (cm *ConnectionManager) createClient(conn net.Conn) *Client {
 func (cm *ConnectionManager) RemoveClient(clientID string) {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	
+
 	client, exists := cm.clients[clientID]
 	if !exists {
 		return
 	}
-	
+
 	// Remove from player mapping if exists
 	if client.GetPlayerID() != "" {
 		delete(cm.playerClients, client.GetPlayerID())
 	}
-	
+
 	// Close and remove client
 	client.Close()
 	delete(cm.clients, clientID)
-	
+
 	fmt.Printf("Client disconnected: %s\n", clientID)
 }
 
 func (cm *ConnectionManager) GetClient(clientID string) (*Client, bool) {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
-	
+
 	client, exists := cm.clients[clientID]
 	return client, exists
 }
@@ -134,7 +134,7 @@ func (cm *ConnectionManager) GetClient(clientID string) (*Client, bool) {
 func (cm *ConnectionManager) GetPlayerClient(playerID string) (*Client, bool) {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
-	
+
 	client, exists := cm.playerClients[playerID]
 	return client, exists
 }
@@ -142,12 +142,12 @@ func (cm *ConnectionManager) GetPlayerClient(playerID string) (*Client, bool) {
 func (cm *ConnectionManager) RegisterPlayerClient(playerID string, client *Client) {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	
+
 	// Remove any existing mapping for this player
 	if existingClient, exists := cm.playerClients[playerID]; exists {
 		existingClient.Close()
 	}
-	
+
 	cm.playerClients[playerID] = client
 	client.SetPlayerID(playerID)
 }
@@ -155,7 +155,7 @@ func (cm *ConnectionManager) RegisterPlayerClient(playerID string, client *Clien
 func (cm *ConnectionManager) UnregisterPlayerClient(playerID string) {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
-	
+
 	delete(cm.playerClients, playerID)
 }
 
@@ -168,7 +168,7 @@ func (cm *ConnectionManager) BroadcastToAll(message string) {
 		}
 	}
 	cm.mutex.RUnlock()
-	
+
 	for _, client := range clients {
 		client.Send(message)
 	}
@@ -184,7 +184,7 @@ func (cm *ConnectionManager) BroadcastToRoom(roomID, message string) {
 		}
 	}
 	cm.mutex.RUnlock()
-	
+
 	for _, client := range clients {
 		client.Send(message)
 	}
@@ -199,30 +199,30 @@ func (cm *ConnectionManager) getClientCount() int {
 func (cm *ConnectionManager) GetStats() ConnectionStats {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
-	
+
 	stats := ConnectionStats{
-		TotalClients:     len(cm.clients),
+		TotalClients:         len(cm.clients),
 		AuthenticatedClients: 0,
-		InGameClients:    0,
+		InGameClients:        0,
 	}
-	
+
 	for _, client := range cm.clients {
 		switch client.GetState() {
-		case StateCharacterSelection, StateInGame:
+		case StateCharacterSelection, StateCharacterCreation, StateInGame:
 			stats.AuthenticatedClients++
 			if client.GetState() == StateInGame {
 				stats.InGameClients++
 			}
 		}
 	}
-	
+
 	return stats
 }
 
 func (cm *ConnectionManager) cleanupClients() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ticker.C:
@@ -243,7 +243,7 @@ func (cm *ConnectionManager) performCleanup() {
 		}
 	}
 	cm.mutex.RUnlock()
-	
+
 	for _, clientID := range toRemove {
 		cm.RemoveClient(clientID)
 	}

@@ -41,7 +41,7 @@ CREATE TABLE characters (
 CREATE TABLE item_instances (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     template_id VARCHAR(100) NOT NULL,
-    owner_id UUID NOT NULL, -- Can reference characters.id or room IDs
+    owner_id VARCHAR(100) NOT NULL, -- Can reference character IDs or room IDs
     quantity INTEGER DEFAULT 1,
     durability INTEGER DEFAULT 100,
     enchantments JSONB NOT NULL DEFAULT '[]',

@@ -13,7 +13,7 @@ import (
 // SetupTestDatabase creates a test database with schema
 func SetupTestDatabase(t *testing.T) (*sql.DB, string) {
 	// Generate unique database name
-	testDBName := fmt.Sprintf("dungeogo_test_%d", 
+	testDBName := fmt.Sprintf("dungeogo_test_%d",
 		time.Now().UnixNano())
 
 	// Try containerized postgres first (port 5433), then local postgres (port 5432)
@@ -31,16 +31,29 @@ func SetupTestDatabase(t *testing.T) (*sql.DB, string) {
 		if err != nil {
 			continue
 		}
-		if err = adminDB.Ping(); err != nil {
+		if err = pingWithRetry(adminDB, 20, 250*time.Millisecond); err != nil {
 			adminDB.Close()
 			continue
 		}
 		connStr = cs
+		adminDB.Close()
 		break
 	}
 
-	if adminDB == nil {
+	if connStr == "" {
 		t.Skipf("Skipping database tests - postgres not available (tried containerized and local)")
+		return nil, ""
+	}
+
+	// Use a fresh admin connection for database creation.
+	adminDB, err = sql.Open("postgres", connStr)
+	if err != nil {
+		t.Skipf("Skipping database tests - cannot open admin database connection: %v", err)
+		return nil, ""
+	}
+	if err = pingWithRetry(adminDB, 20, 250*time.Millisecond); err != nil {
+		adminDB.Close()
+		t.Skipf("Skipping database tests - admin database unavailable: %v", err)
 		return nil, ""
 	}
 
@@ -141,7 +154,7 @@ func createSchema(db *sql.DB) error {
 	CREATE TABLE item_instances (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		template_id VARCHAR(100) NOT NULL,
-		owner_id UUID NOT NULL,
+		owner_id VARCHAR(100) NOT NULL,
 		quantity INTEGER DEFAULT 1,
 		durability INTEGER DEFAULT 100,
 		enchantments JSONB NOT NULL DEFAULT '[]',
@@ -227,3 +240,14 @@ func cleanupDatabase(dbName string) {
 	db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
 }
 
+func pingWithRetry(db *sql.DB, attempts int, delay time.Duration) error {
+	var err error
+	for i := 0; i < attempts; i++ {
+		err = db.Ping()
+		if err == nil {
+			return nil
+		}
+		time.Sleep(delay)
+	}
+	return err
+}

@@ -8,19 +8,23 @@ import (
 )
 
 type Client struct {
-	ID         string
-	conn       net.Conn
-	reader     *bufio.Reader
-	writer     *bufio.Writer
-	connected  bool
-	playerID   string
-	characterID string
-	state      ClientState
-	lastActive time.Time
-	tempUsername string // For storing username during account creation
-	tempPassword string // For storing password during confirmation
-	tempEmail    string // For storing email during account creation
-	mutex      sync.RWMutex
+	ID                 string
+	conn               net.Conn
+	reader             *bufio.Reader
+	writer             *bufio.Writer
+	connected          bool
+	playerID           string
+	characterID        string
+	state              ClientState
+	lastActive         time.Time
+	tempUsername       string // For storing username during account creation
+	tempPassword       string // For storing password during confirmation
+	tempEmail          string // For storing email during account creation
+	tempCharacterName  string // For interactive character creation
+	tempCharacterRace  string // For interactive character creation
+	tempCharacterClass string // For interactive character creation
+	tempCreationStep   int    // 0=name, 1=race, 2=class, 3=confirm
+	mutex              sync.RWMutex
 }
 
 type ClientState int
@@ -31,6 +35,7 @@ const (
 	StateCreatingAccount
 	StateConfirmingPassword
 	StateCharacterSelection
+	StateCharacterCreation
 	StateInGame
 	StateDisconnecting
 )
@@ -50,32 +55,32 @@ func NewClient(id string, conn net.Conn) *Client {
 func (c *Client) Send(message string) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	
+
 	if !c.connected {
 		return ErrClientDisconnected
 	}
-	
+
 	_, err := c.writer.WriteString(message + "\r\n")
 	if err != nil {
 		return err
 	}
-	
+
 	return c.writer.Flush()
 }
 
 func (c *Client) SendPrompt(prompt string) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	
+
 	if !c.connected {
 		return ErrClientDisconnected
 	}
-	
+
 	_, err := c.writer.WriteString(prompt)
 	if err != nil {
 		return err
 	}
-	
+
 	return c.writer.Flush()
 }
 
@@ -85,7 +90,7 @@ func (c *Client) ReadLine() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Remove trailing newline and carriage return
 	if len(line) > 0 && line[len(line)-1] == '\n' {
 		line = line[:len(line)-1]
@@ -93,21 +98,21 @@ func (c *Client) ReadLine() (string, error) {
 	if len(line) > 0 && line[len(line)-1] == '\r' {
 		line = line[:len(line)-1]
 	}
-	
+
 	return line, nil
 }
 
 // ReadPassword reads a password from the client with echo disabled
 func (c *Client) ReadPassword() (string, error) {
 	c.updateLastActive()
-	
+
 	// Send telnet command to disable echo
 	// IAC WILL ECHO tells the client we (server) will handle echoing
 	_, err := c.conn.Write([]byte{255, 251, 1}) // IAC WILL ECHO
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Read the password, handling potential telnet control sequences
 	var line string
 	for {
@@ -117,39 +122,39 @@ func (c *Client) ReadPassword() (string, error) {
 			c.conn.Write([]byte{255, 252, 1}) // IAC WONT ECHO
 			return "", err
 		}
-		
+
 		// Handle telnet IAC (Interpret As Command) sequences
 		if char == 255 { // IAC
 			// Read the next two bytes to complete the telnet sequence
 			c.reader.ReadByte() // command
 			c.reader.ReadByte() // option
-			continue // Skip telnet control sequences
+			continue            // Skip telnet control sequences
 		}
-		
+
 		// End of line
 		if char == '\n' {
 			break
 		}
-		
+
 		// Skip carriage return
 		if char == '\r' {
 			continue
 		}
-		
+
 		// Add normal character to password
 		line += string(char)
 	}
-	
+
 	// Re-enable echo - tell client we won't handle echoing anymore
 	_, err = c.conn.Write([]byte{255, 252, 1}) // IAC WONT ECHO
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Send a newline to the client since they won't see the echo
 	c.writer.WriteString("\r\n")
 	c.writer.Flush()
-	
+
 	return line, nil
 }
 
@@ -166,11 +171,11 @@ func (c *Client) IsConnected() bool {
 func (c *Client) Close() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	
+
 	if !c.connected {
 		return nil
 	}
-	
+
 	c.connected = false
 	c.state = StateDisconnecting
 	return c.conn.Close()
@@ -277,4 +282,62 @@ func (c *Client) ClearTempData() {
 	c.tempUsername = ""
 	c.tempPassword = ""
 	c.tempEmail = ""
+}
+
+// Temporary character creation data getters/setters
+func (c *Client) GetTempCharacterName() string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tempCharacterName
+}
+
+func (c *Client) SetTempCharacterName(name string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempCharacterName = name
+}
+
+func (c *Client) GetTempCharacterRace() string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tempCharacterRace
+}
+
+func (c *Client) SetTempCharacterRace(race string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempCharacterRace = race
+}
+
+func (c *Client) GetTempCharacterClass() string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tempCharacterClass
+}
+
+func (c *Client) SetTempCharacterClass(class string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempCharacterClass = class
+}
+
+func (c *Client) GetTempCreationStep() int {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tempCreationStep
+}
+
+func (c *Client) SetTempCreationStep(step int) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempCreationStep = step
+}
+
+func (c *Client) ClearTempCharacterData() {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempCharacterName = ""
+	c.tempCharacterRace = ""
+	c.tempCharacterClass = ""
+	c.tempCreationStep = 0
 }

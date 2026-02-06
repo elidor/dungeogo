@@ -128,7 +128,7 @@ func createTestSchema(repoManager *PostgreSQLRepositoryManager) error {
 	CREATE TABLE item_instances (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		template_id VARCHAR(100) NOT NULL,
-		owner_id UUID NOT NULL,
+		owner_id VARCHAR(100) NOT NULL,
 		quantity INTEGER DEFAULT 1,
 		durability INTEGER DEFAULT 100,
 		enchantments JSONB NOT NULL DEFAULT '[]',
@@ -187,11 +187,11 @@ func cleanupTestDatabase(dbName string) {
 
 func createTestPlayer() *player.Player {
 	return &player.Player{
-		ID:           uuid.New().String(),
-		Username:     "testuser",
-		Email:        "test@example.com",
-		PasswordHash: "testhash",
-		CreatedAt:    time.Now(),
+		ID:            uuid.New().String(),
+		Username:      "testuser",
+		Email:         "test@example.com",
+		PasswordHash:  "testhash",
+		CreatedAt:     time.Now(),
 		AccountStatus: player.AccountActive,
 		MaxCharacters: 5,
 		Preferences: player.PlayerPrefs{
@@ -207,23 +207,23 @@ func createTestPlayer() *player.Player {
 func createTestCharacter(playerID string) *character.Character {
 	race, _ := character.GetRaceByID("human")
 	class, _ := character.GetClassByID("warrior")
-	
+
 	char := character.NewCharacter(playerID, "TestChar", race, class)
 	char.ID = uuid.New().String()
-	
+
 	return char
 }
 
 func createTestItemInstance() *items.ItemInstance {
 	return &items.ItemInstance{
-		ID:           uuid.New().String(),
-		TemplateID:   "test_template",
-		OwnerID:      "test_owner",
-		Quantity:     1,
-		Durability:   100,
-		Enchantments: []items.Enchantment{},
+		ID:            uuid.New().String(),
+		TemplateID:    "test_template",
+		OwnerID:       "test_owner",
+		Quantity:      1,
+		Durability:    100,
+		Enchantments:  []items.Enchantment{},
 		Modifications: make(map[string]interface{}),
-		CreatedAt:    time.Now(),
+		CreatedAt:     time.Now(),
 	}
 }
 
@@ -231,5 +231,5 @@ var testCounter int
 
 func generateUUID() string {
 	testCounter++
-	return fmt.Sprintf("test-uuid-%d-%s", testCounter, uuid.New().String())
+	return uuid.New().String()
 }
