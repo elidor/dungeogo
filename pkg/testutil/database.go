@@ -31,16 +31,29 @@ func SetupTestDatabase(t *testing.T) (*sql.DB, string) {
 		if err != nil {
 			continue
 		}
-		if err = adminDB.Ping(); err != nil {
+		if err = pingWithRetry(adminDB, 20, 250*time.Millisecond); err != nil {
 			adminDB.Close()
 			continue
 		}
 		connStr = cs
+		adminDB.Close()
 		break
 	}
 
-	if adminDB == nil {
+	if connStr == "" {
 		t.Skipf("Skipping database tests - postgres not available (tried containerized and local)")
+		return nil, ""
+	}
+
+	// Use a fresh admin connection for database creation.
+	adminDB, err = sql.Open("postgres", connStr)
+	if err != nil {
+		t.Skipf("Skipping database tests - cannot open admin database connection: %v", err)
+		return nil, ""
+	}
+	if err = pingWithRetry(adminDB, 20, 250*time.Millisecond); err != nil {
+		adminDB.Close()
+		t.Skipf("Skipping database tests - admin database unavailable: %v", err)
 		return nil, ""
 	}
 
@@ -225,4 +238,16 @@ func cleanupDatabase(dbName string) {
 
 	// Drop the database
 	db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+}
+
+func pingWithRetry(db *sql.DB, attempts int, delay time.Duration) error {
+	var err error
+	for i := 0; i < attempts; i++ {
+		err = db.Ping()
+		if err == nil {
+			return nil
+		}
+		time.Sleep(delay)
+	}
+	return err
 }

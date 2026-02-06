@@ -12,9 +12,11 @@ import (
 	"github.com/elidor/dungeogo/pkg/game/character"
 	"github.com/elidor/dungeogo/pkg/game/items"
 	"github.com/elidor/dungeogo/pkg/game/player"
+	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 	"github.com/elidor/dungeogo/pkg/server"
 	"github.com/elidor/dungeogo/pkg/testutil"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestServerIntegration_BasicConnection(t *testing.T) {
@@ -367,6 +369,165 @@ func TestServerIntegration_ConcurrentClients(t *testing.T) {
 	}
 }
 
+func TestServerIntegration_GuidedCharacterCreation(t *testing.T) {
+	repoManager := testutil.ImprovedSetupTestDB(t)
+	if repoManager == nil {
+		t.Skip("Database not available for integration testing")
+	}
+
+	gameEngine := game.NewEngine(repoManager)
+	sessionHandler := server.NewSessionHandler(repoManager, gameEngine)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			client := server.NewClient("guided-create-test-client", conn)
+			go sessionHandler.HandleClient(client)
+		}
+	}()
+
+	password := "testpass123"
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("Failed to hash test password: %v", err)
+	}
+
+	testPlayer := player.NewPlayer("guidedtester", "guidedtester@example.com", string(hash))
+	err = repoManager.Players().CreatePlayer(testPlayer)
+	if err != nil {
+		t.Fatalf("Failed to create test player: %v", err)
+	}
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Failed to connect to test server: %v", err)
+	}
+	defer conn.Close()
+
+	reader := bufio.NewReader(conn)
+	var transcript strings.Builder
+
+	out, err := readUntilContains(conn, reader, "Please enter your username:")
+	if err != nil {
+		t.Fatalf("Failed waiting for username prompt: %v", err)
+	}
+	transcript.WriteString(out)
+
+	if _, err := fmt.Fprintf(conn, "%s\n", testPlayer.Username); err != nil {
+		t.Fatalf("Failed to send username: %v", err)
+	}
+
+	out, err = readUntilContains(conn, reader, "Please enter your password:")
+	if err != nil {
+		t.Fatalf("Failed waiting for password prompt: %v", err)
+	}
+	transcript.WriteString(out)
+
+	if _, err := fmt.Fprintf(conn, "%s\n", password); err != nil {
+		t.Fatalf("Failed to send password: %v", err)
+	}
+
+	out, err = readUntilContains(conn, reader, "Character> ")
+	if err != nil {
+		t.Fatalf("Failed waiting for character menu prompt: %v", err)
+	}
+	transcript.WriteString(out)
+
+	if _, err := fmt.Fprintf(conn, "create\n"); err != nil {
+		t.Fatalf("Failed to send create command: %v", err)
+	}
+
+	out, err = readUntilContains(conn, reader, "Name: ")
+	if err != nil {
+		t.Fatalf("Failed waiting for name prompt: %v", err)
+	}
+	transcript.WriteString(out)
+
+	newCharName := "GuidedHero123"
+	if _, err := fmt.Fprintf(conn, "%s\n", newCharName); err != nil {
+		t.Fatalf("Failed to send character name: %v", err)
+	}
+
+	out, err = readUntilContains(conn, reader, "Race: ")
+	if err != nil {
+		t.Fatalf("Failed waiting for race prompt: %v", err)
+	}
+	transcript.WriteString(out)
+
+	if _, err := fmt.Fprintf(conn, "elf\n"); err != nil {
+		t.Fatalf("Failed to send race: %v", err)
+	}
+
+	out, err = readUntilContains(conn, reader, "Class: ")
+	if err != nil {
+		t.Fatalf("Failed waiting for class prompt: %v", err)
+	}
+	transcript.WriteString(out)
+
+	if _, err := fmt.Fprintf(conn, "mage\n"); err != nil {
+		t.Fatalf("Failed to send class: %v", err)
+	}
+
+	out, err = readUntilContains(conn, reader, "Confirm: ")
+	if err != nil {
+		t.Fatalf("Failed waiting for confirmation prompt: %v", err)
+	}
+	transcript.WriteString(out)
+
+	if _, err := fmt.Fprintf(conn, "yes\n"); err != nil {
+		t.Fatalf("Failed to send confirmation: %v", err)
+	}
+
+	out, err = readUntilContains(conn, reader, "Character> ")
+	if err != nil {
+		t.Fatalf("Failed waiting for character menu after creation: %v", err)
+	}
+	transcript.WriteString(out)
+
+	var characters []*interfaces.CharacterSummary
+	for i := 0; i < 10; i++ {
+		characters, err = repoManager.Characters().GetCharactersByPlayer(testPlayer.ID)
+		if err != nil {
+			t.Fatalf("Failed to fetch characters after guided creation: %v", err)
+		}
+		if len(characters) > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	found := false
+	for _, c := range characters {
+		if c.Name == newCharName {
+			found = true
+			if c.Race != "Elf" {
+				t.Fatalf("Expected created character race Elf, got %s", c.Race)
+			}
+			if c.Class != "Mage" {
+				t.Fatalf("Expected created character class Mage, got %s", c.Class)
+			}
+		}
+	}
+
+	if !found {
+		var names []string
+		for _, c := range characters {
+			names = append(names, c.Name)
+		}
+		t.Fatalf("Expected guided-created character %q to exist; got names=%v; transcript=%q",
+			newCharName, names, transcript.String())
+	}
+}
+
 // Helper functions
 
 func createTestPlayer() *player.Player {
@@ -396,4 +557,25 @@ func generateTestID(i int) string {
 
 func generateTestUUID() string {
 	return uuid.New().String()
+}
+
+func readUntilContains(conn net.Conn, reader *bufio.Reader, expected string) (string, error) {
+	var b strings.Builder
+	for i := 0; i < 8192; i++ {
+		if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+			return b.String(), err
+		}
+
+		ch, err := reader.ReadByte()
+		if err != nil {
+			return b.String(), err
+		}
+		b.WriteByte(ch)
+
+		if strings.Contains(b.String(), expected) {
+			return b.String(), nil
+		}
+	}
+
+	return b.String(), fmt.Errorf("did not receive expected text %q", expected)
 }

@@ -2,6 +2,8 @@ package character
 
 import (
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Character struct {
@@ -69,20 +71,21 @@ type CharacterAppearance struct {
 
 func NewCharacter(playerID, name string, race *Race, class *Class) *Character {
 	stats := calculateStartingStats(race, class)
-	
+
 	return &Character{
-		PlayerID:    playerID,
-		Name:        name,
-		Race:        race,
-		Class:       class,
-		Stats:       stats,
-		Skills:      NewSkillSet(),
-		State:       CharacterAlive,
-		CreatedAt:   time.Now(),
-		Level:       1,
-		Experience:  0,
-		DeathCount:  0,
-		KillCount:   0,
+		ID:         uuid.New().String(),
+		PlayerID:   playerID,
+		Name:       name,
+		Race:       race,
+		Class:      class,
+		Stats:      stats,
+		Skills:     NewSkillSet(),
+		State:      CharacterAlive,
+		CreatedAt:  time.Now(),
+		Level:      1,
+		Experience: 0,
+		DeathCount: 0,
+		KillCount:  0,
 		Location: &Location{
 			RoomID: "starting_room",
 			ZoneID: "newbie_zone",
@@ -114,7 +117,7 @@ func calculateStartingStats(race *Race, class *Class) *CharacterStats {
 		Wisdom:       10,
 		Charisma:     10,
 	}
-	
+
 	if race != nil {
 		stats.Strength += race.StatModifiers.Strength
 		stats.Dexterity += race.StatModifiers.Dexterity
@@ -123,13 +126,13 @@ func calculateStartingStats(race *Race, class *Class) *CharacterStats {
 		stats.Wisdom += race.StatModifiers.Wisdom
 		stats.Charisma += race.StatModifiers.Charisma
 	}
-	
+
 	stats.MaxHealth = stats.Constitution * 10
 	stats.Health = stats.MaxHealth
 	stats.MaxMana = stats.Intelligence * 5
 	stats.Mana = stats.MaxMana
 	stats.MaxStamina = stats.Constitution * 5
 	stats.Stamina = stats.MaxStamina
-	
+
 	return stats
 }
