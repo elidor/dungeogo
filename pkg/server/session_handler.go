@@ -171,15 +171,11 @@ func (sh *SessionHandler) handleCharacterSelection(client *Client, input string)
 			sh.selectCharacter(client, parts[1])
 		}
 	case "create", "c":
-		if len(parts) == 1 {
-			sh.startCharacterCreation(client)
-		} else if len(parts) >= 4 {
-			sh.createCharacter(client, parts[1], parts[2], parts[3])
-		} else {
+		if len(parts) != 1 {
 			client.Send("Usage: create")
-			client.Send("  Starts guided character creation.")
-			client.Send("Usage: create <name> <race> <class>")
-			client.Send("  Legacy one-line character creation.")
+			client.Send("This command starts guided character creation.")
+		} else {
+			sh.startCharacterCreation(client)
 		}
 	case "delete", "d":
 		if len(parts) < 2 {
@@ -227,7 +223,6 @@ func (sh *SessionHandler) showCharacterMenu(client *Client) {
 	client.Send("  list (l)                 - List your characters")
 	client.Send("  select (s) <name>        - Enter game with character")
 	client.Send("  create (c)               - Guided character creation")
-	client.Send("  create <name> <race> <class> - One-line character creation")
 	client.Send("  delete (d) <name>        - Delete character")
 	client.Send("  quit (q)                 - Disconnect")
 	client.Send("")
