@@ -1,0 +1,10 @@
+.git
+.claude
+.crush
+.vscode
+.env
+bin
+coverage
+*.out
+*.html
+server

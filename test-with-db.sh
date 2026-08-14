@@ -10,10 +10,12 @@ NC='\033[0m' # No Color
 # Configuration
 COMPOSE_FILE="docker-compose.test.yml"
 CONTAINER_NAME="dungeogo-test-db"
+APPLE_TEST_VOLUME="dungeogo-test-db-data"
 MAX_WAIT_TIME=30
 POSTGRES_PORT=5433
 CONTAINER_CLI=""
 COMPOSE_CMD=()
+USE_APPLE_CONTAINER=false
 
 # Function to print colored output
 print_status() {
@@ -32,8 +34,24 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Function to detect a working container runtime + compose command
+# Function to detect a working container runtime + compose command.
+# Set DUNGEOGO_CONTAINER_RUNTIME=apple to use Apple's `container` CLI.
 check_container_runtime() {
+    if [ "${DUNGEOGO_CONTAINER_RUNTIME:-}" = "apple" ]; then
+        if ! command -v container &> /dev/null; then
+            print_error "Apple Container CLI not found. Install it and run 'container system start'."
+            exit 1
+        fi
+        if ! container system status &> /dev/null; then
+            print_status "Starting Apple Container services..."
+            container system start
+        fi
+        CONTAINER_CLI="container"
+        USE_APPLE_CONTAINER=true
+        print_status "Using runtime: Apple Container"
+        return 0
+    fi
+
     if command -v docker &> /dev/null; then
         if docker compose version &> /dev/null; then
             CONTAINER_CLI="docker"
@@ -62,12 +80,17 @@ check_container_runtime() {
     print_error "  - docker + docker compose"
     print_error "  - docker-compose"
     print_error "  - nerdctl + nerdctl compose (Rancher Desktop)"
+    print_error "  - Apple Container (DUNGEOGO_CONTAINER_RUNTIME=apple)"
     exit 1
 }
 
 # Function to check if PostgreSQL container is already running
 is_container_running() {
-    "$CONTAINER_CLI" ps --format "table {{.Names}}" | grep -q "$CONTAINER_NAME"
+    if [ "$USE_APPLE_CONTAINER" = true ]; then
+        "$CONTAINER_CLI" list --quiet | grep -Fxq "$CONTAINER_NAME"
+    else
+        "$CONTAINER_CLI" ps --format "table {{.Names}}" | grep -q "$CONTAINER_NAME"
+    fi
 }
 
 # Function to check if PostgreSQL is ready to accept connections
@@ -99,7 +122,20 @@ start_database() {
         return 0
     fi
 
-    "${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" up -d
+    if [ "$USE_APPLE_CONTAINER" = true ]; then
+        "$CONTAINER_CLI" volume create "$APPLE_TEST_VOLUME" >/dev/null 2>&1 || true
+        "$CONTAINER_CLI" run --detach --rm --name "$CONTAINER_NAME" \
+            --publish "127.0.0.1:${POSTGRES_PORT}:5432" \
+            --volume "${APPLE_TEST_VOLUME}:/var/lib/postgresql/data" \
+            --env POSTGRES_DB=postgres \
+            --env POSTGRES_USER=testuser \
+            --env POSTGRES_PASSWORD=testpass \
+            --env POSTGRES_HOST_AUTH_METHOD=trust \
+            --env PGDATA=/var/lib/postgresql/data/pgdata \
+            postgres:15-alpine
+    else
+        "${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" up -d
+    fi
 
     if [ $? -ne 0 ]; then
         print_error "Failed to start PostgreSQL container"
@@ -118,7 +154,12 @@ start_database() {
 stop_database() {
     print_status "Stopping PostgreSQL test container..."
 
-    "${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" down -v
+    if [ "$USE_APPLE_CONTAINER" = true ]; then
+        "$CONTAINER_CLI" stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
+        "$CONTAINER_CLI" volume delete "$APPLE_TEST_VOLUME" >/dev/null 2>&1 || true
+    else
+        "${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" down -v
+    fi
 
     print_success "PostgreSQL container stopped"
 }
@@ -197,6 +238,7 @@ show_usage() {
     echo "  $0 -c                                 # Run all tests with coverage"
     echo "  $0 -k ./pkg/integration              # Run integration tests, keep DB running"
     echo "  $0 -s                                 # Stop database container"
+    echo "  DUNGEOGO_CONTAINER_RUNTIME=apple $0   # Use Apple Container"
     echo ""
 }
 

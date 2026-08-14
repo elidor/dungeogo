@@ -208,7 +208,7 @@ func (cm *ConnectionManager) GetStats() ConnectionStats {
 
 	for _, client := range cm.clients {
 		switch client.GetState() {
-		case StateCharacterSelection, StateCharacterCreation, StateInGame:
+		case StateCharacterSelection, StateCharacterCreation, StateCharacterSelecting, StateCharacterDeleting, StateInGame:
 			stats.AuthenticatedClients++
 			if client.GetState() == StateInGame {
 				stats.InGameClients++

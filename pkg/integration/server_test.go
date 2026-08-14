@@ -528,6 +528,247 @@ func TestServerIntegration_GuidedCharacterCreation(t *testing.T) {
 	}
 }
 
+func TestServerIntegration_GuidedSelectAndDeleteByNumber(t *testing.T) {
+	repoManager := testutil.ImprovedSetupTestDB(t)
+	if repoManager == nil {
+		t.Skip("Database not available for integration testing")
+	}
+
+	gameEngine := game.NewEngine(repoManager)
+	sessionHandler := server.NewSessionHandler(repoManager, gameEngine)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			client := server.NewClient("guided-select-delete-test-client", conn)
+			go sessionHandler.HandleClient(client)
+		}
+	}()
+
+	password := "testpass123"
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("Failed to hash test password: %v", err)
+	}
+
+	testPlayer := player.NewPlayer("numguidetester", "numguidetester@example.com", string(hash))
+	if err := repoManager.Players().CreatePlayer(testPlayer); err != nil {
+		t.Fatalf("Failed to create test player: %v", err)
+	}
+
+	alpha := createTestCharacter(testPlayer.ID)
+	alpha.Name = "Alpha"
+	if err := repoManager.Characters().CreateCharacter(alpha); err != nil {
+		t.Fatalf("Failed to create Alpha character: %v", err)
+	}
+
+	zulu := createTestCharacter(testPlayer.ID)
+	zulu.Name = "Zulu"
+	if err := repoManager.Characters().CreateCharacter(zulu); err != nil {
+		t.Fatalf("Failed to create Zulu character: %v", err)
+	}
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Failed to connect to test server: %v", err)
+	}
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+
+	if _, err := readUntilContains(conn, reader, "Please enter your username:"); err != nil {
+		t.Fatalf("Failed waiting for username prompt: %v", err)
+	}
+	fmt.Fprintf(conn, "%s\n", testPlayer.Username)
+	if _, err := readUntilContains(conn, reader, "Please enter your password:"); err != nil {
+		t.Fatalf("Failed waiting for password prompt: %v", err)
+	}
+	fmt.Fprintf(conn, "%s\n", password)
+	if _, err := readUntilContains(conn, reader, "Character> "); err != nil {
+		t.Fatalf("Failed waiting for character menu prompt: %v", err)
+	}
+
+	fmt.Fprintf(conn, "select\n")
+	selectPrompt, err := readUntilContains(conn, reader, "Select #: ")
+	if err != nil {
+		t.Fatalf("Failed waiting for select prompt: %v", err)
+	}
+	if !strings.Contains(selectPrompt, "Alpha") || !strings.Contains(selectPrompt, "Zulu") {
+		t.Fatalf("Expected numbered select list with Alpha and Zulu, got: %q", selectPrompt)
+	}
+
+	// Alphabetical ordering means Alpha is #1 and should be selected.
+	fmt.Fprintf(conn, "1\n")
+	selectedOut, err := readUntilContains(conn, reader, "You enter the game world...")
+	if err != nil {
+		t.Fatalf("Failed waiting for game entry after select: %v", err)
+	}
+	if !strings.Contains(selectedOut, "Welcome, Alpha!") {
+		t.Fatalf("Expected to select Alpha by #1, got: %q", selectedOut)
+	}
+
+	// New session for deletion flow.
+	conn2, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Failed to connect second session: %v", err)
+	}
+	defer conn2.Close()
+	reader2 := bufio.NewReader(conn2)
+
+	if _, err := readUntilContains(conn2, reader2, "Please enter your username:"); err != nil {
+		t.Fatalf("Failed waiting for username prompt (delete flow): %v", err)
+	}
+	fmt.Fprintf(conn2, "%s\n", testPlayer.Username)
+	if _, err := readUntilContains(conn2, reader2, "Please enter your password:"); err != nil {
+		t.Fatalf("Failed waiting for password prompt (delete flow): %v", err)
+	}
+	fmt.Fprintf(conn2, "%s\n", password)
+	if _, err := readUntilContains(conn2, reader2, "Character> "); err != nil {
+		t.Fatalf("Failed waiting for character menu prompt (delete flow): %v", err)
+	}
+
+	fmt.Fprintf(conn2, "delete\n")
+	deletePrompt, err := readUntilContains(conn2, reader2, "Delete #: ")
+	if err != nil {
+		t.Fatalf("Failed waiting for delete prompt: %v", err)
+	}
+	if !strings.Contains(deletePrompt, "Alpha") || !strings.Contains(deletePrompt, "Zulu") {
+		t.Fatalf("Expected numbered delete list with Alpha and Zulu, got: %q", deletePrompt)
+	}
+
+	// Zulu should be #2 alphabetically.
+	fmt.Fprintf(conn2, "2\n")
+	if _, err := readUntilContains(conn2, reader2, "Confirm Name: "); err != nil {
+		t.Fatalf("Failed waiting for confirmation-name prompt: %v", err)
+	}
+
+	charsBeforeConfirm, err := repoManager.Characters().GetCharactersByPlayer(testPlayer.ID)
+	if err != nil {
+		t.Fatalf("Failed to fetch characters before confirmation: %v", err)
+	}
+	if len(charsBeforeConfirm) != 2 {
+		t.Fatalf("Expected 2 characters before confirmation, got %d", len(charsBeforeConfirm))
+	}
+
+	fmt.Fprintf(conn2, "Zulu\n")
+	if _, err := readUntilContains(conn2, reader2, "Character 'Zulu' deleted."); err != nil {
+		t.Fatalf("Failed waiting for deletion confirmation: %v", err)
+	}
+
+	charsAfterConfirm, err := repoManager.Characters().GetCharactersByPlayer(testPlayer.ID)
+	if err != nil {
+		t.Fatalf("Failed to fetch characters after confirmation: %v", err)
+	}
+	if len(charsAfterConfirm) != 1 {
+		t.Fatalf("Expected 1 character after deletion, got %d", len(charsAfterConfirm))
+	}
+	if charsAfterConfirm[0].Name != "Alpha" {
+		t.Fatalf("Expected remaining character to be Alpha, got %s", charsAfterConfirm[0].Name)
+	}
+}
+
+func TestServerIntegration_InGameQuitDisconnects(t *testing.T) {
+	repoManager := testutil.ImprovedSetupTestDB(t)
+	if repoManager == nil {
+		t.Skip("Database not available for integration testing")
+	}
+
+	gameEngine := game.NewEngine(repoManager)
+	sessionHandler := server.NewSessionHandler(repoManager, gameEngine)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			client := server.NewClient("quit-disconnect-test-client", conn)
+			go sessionHandler.HandleClient(client)
+		}
+	}()
+
+	password := "testpass123"
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("Failed to hash test password: %v", err)
+	}
+
+	testPlayer := player.NewPlayer("quittester", "quittester@example.com", string(hash))
+	if err := repoManager.Players().CreatePlayer(testPlayer); err != nil {
+		t.Fatalf("Failed to create test player: %v", err)
+	}
+
+	alpha := createTestCharacter(testPlayer.ID)
+	alpha.Name = "Alpha"
+	if err := repoManager.Characters().CreateCharacter(alpha); err != nil {
+		t.Fatalf("Failed to create Alpha character: %v", err)
+	}
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Failed to connect to test server: %v", err)
+	}
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+
+	if _, err := readUntilContains(conn, reader, "Please enter your username:"); err != nil {
+		t.Fatalf("Failed waiting for username prompt: %v", err)
+	}
+	fmt.Fprintf(conn, "%s\n", testPlayer.Username)
+	if _, err := readUntilContains(conn, reader, "Please enter your password:"); err != nil {
+		t.Fatalf("Failed waiting for password prompt: %v", err)
+	}
+	fmt.Fprintf(conn, "%s\n", password)
+	if _, err := readUntilContains(conn, reader, "Character> "); err != nil {
+		t.Fatalf("Failed waiting for character menu prompt: %v", err)
+	}
+
+	fmt.Fprintf(conn, "select\n")
+	if _, err := readUntilContains(conn, reader, "Select #: "); err != nil {
+		t.Fatalf("Failed waiting for select prompt: %v", err)
+	}
+	fmt.Fprintf(conn, "1\n")
+	if _, err := readUntilContains(conn, reader, "> "); err != nil {
+		t.Fatalf("Failed waiting for game entry: %v", err)
+	}
+
+	fmt.Fprintf(conn, "quit\n")
+	if _, err := readUntilContains(conn, reader, "Saving character and disconnecting..."); err != nil {
+		t.Fatalf("Failed waiting for quit message: %v", err)
+	}
+
+	// After quit response, no new prompt should appear and the connection should close.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+			t.Fatalf("Failed setting read deadline: %v", err)
+		}
+		b, err := reader.ReadByte()
+		if err != nil {
+			return // EOF/timeout after close is acceptable.
+		}
+		if b == '>' {
+			t.Fatalf("Expected no prompt after quit, but received one")
+		}
+	}
+
+	t.Fatalf("Expected connection to close after quit")
+}
+
 // Helper functions
 
 func createTestPlayer() *player.Player {

@@ -3,7 +3,10 @@ package server
 import (
 	"fmt"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/elidor/dungeogo/pkg/game/character"
 	"github.com/elidor/dungeogo/pkg/game/player"
@@ -29,7 +32,11 @@ func NewSessionHandler(repoManager interfaces.RepositoryManager, gameEngine Game
 }
 
 func (sh *SessionHandler) HandleClient(client *Client) {
-	defer client.Close()
+	defer func() {
+		fmt.Printf("Client disconnected: id=%s playerID=%s characterID=%s state=%d\n",
+			client.GetID(), client.GetPlayerID(), client.GetCharacterID(), client.GetState())
+		client.Close()
+	}()
 
 	// Welcome message
 	client.Send("Welcome to DungeoGo!")
@@ -65,6 +72,10 @@ func (sh *SessionHandler) HandleClient(client *Client) {
 			sh.handleCharacterSelection(client, line)
 		case StateCharacterCreation:
 			sh.handleCharacterCreation(client, line)
+		case StateCharacterSelecting:
+			sh.handleCharacterSelectByNumber(client, line)
+		case StateCharacterDeleting:
+			sh.handleCharacterDeleteByNumber(client, line)
 		case StateInGame:
 			sh.handleGameCommand(client, line)
 		}
@@ -154,7 +165,7 @@ func (sh *SessionHandler) handleCharacterSelection(client *Client, input string)
 	input = strings.TrimSpace(input)
 	parts := strings.Fields(input)
 
-	if len(parts) == 0 {
+	if len(parts) == 0 || isMenuHelpInput(input) {
 		sh.showCharacterMenu(client)
 		return
 	}
@@ -165,10 +176,11 @@ func (sh *SessionHandler) handleCharacterSelection(client *Client, input string)
 	case "list", "l":
 		sh.listCharacters(client)
 	case "select", "s":
-		if len(parts) < 2 {
-			client.Send("Usage: select <character_name>")
+		if len(parts) != 1 {
+			client.Send("Usage: select")
+			client.Send("This command starts guided character selection by number.")
 		} else {
-			sh.selectCharacter(client, parts[1])
+			sh.startCharacterSelectByNumber(client)
 		}
 	case "create", "c":
 		if len(parts) != 1 {
@@ -178,10 +190,11 @@ func (sh *SessionHandler) handleCharacterSelection(client *Client, input string)
 			sh.startCharacterCreation(client)
 		}
 	case "delete", "d":
-		if len(parts) < 2 {
-			client.Send("Usage: delete <character_name>")
+		if len(parts) != 1 {
+			client.Send("Usage: delete")
+			client.Send("This command starts guided character deletion by number.")
 		} else {
-			sh.deleteCharacter(client, parts[1])
+			sh.startCharacterDeleteByNumber(client)
 		}
 	case "quit", "q":
 		client.Send("Goodbye!")
@@ -204,6 +217,12 @@ func (sh *SessionHandler) handleGameCommand(client *Client, input string) {
 		return
 	}
 
+	command := strings.ToLower(strings.TrimSpace(input))
+	if command == "quit" || command == "q" {
+		sh.handleInGameQuit(client, characterID)
+		return
+	}
+
 	// Process command through game engine
 	responses, err := sh.gameEngine.ProcessCommand(characterID, input)
 	if err != nil {
@@ -217,13 +236,25 @@ func (sh *SessionHandler) handleGameCommand(client *Client, input string) {
 	client.SendPrompt("> ")
 }
 
+func (sh *SessionHandler) handleInGameQuit(client *Client, characterID string) {
+	// Save the character before disconnecting.
+	char, err := sh.repoManager.Characters().GetCharacter(characterID)
+	if err == nil {
+		char.UpdatePlayTime()
+		_ = sh.repoManager.Characters().UpdateCharacter(char)
+	}
+
+	client.Send("Saving character and disconnecting...")
+	client.Close()
+}
+
 func (sh *SessionHandler) showCharacterMenu(client *Client) {
 	client.Send("\n--- Character Selection ---")
 	client.Send("Commands:")
 	client.Send("  list (l)                 - List your characters")
-	client.Send("  select (s) <name>        - Enter game with character")
+	client.Send("  select (s)               - Select character by number")
 	client.Send("  create (c)               - Guided character creation")
-	client.Send("  delete (d) <name>        - Delete character")
+	client.Send("  delete (d)               - Delete character by number")
 	client.Send("  quit (q)                 - Disconnect")
 	client.Send("")
 	client.SendPrompt("Character> ")
@@ -244,37 +275,163 @@ func (sh *SessionHandler) listCharacters(client *Client) {
 	client.Send("\nYour Characters:")
 	client.Send("Name           Race      Class     Level  Status    Last Played")
 	client.Send("--------------------------------------------------------------")
-	for _, char := range characters {
+	for _, char := range sortCharacterSummariesByName(characters) {
 		status := "Alive"
 		if !char.IsAlive {
 			status = "Dead"
 		}
+
+		lastPlayed := formatLastPlayed(char.LastPlayed)
 		client.Send(fmt.Sprintf("%-14s %-9s %-9s %-6d %-9s %s",
-			char.Name, char.Race, char.Class, char.Level, status, char.LastPlayed))
+			char.Name, char.Race, char.Class, char.Level, status, lastPlayed))
 	}
 	client.Send("")
 }
 
-func (sh *SessionHandler) selectCharacter(client *Client, name string) {
-	// Get characters and find by name
+func formatLastPlayed(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "0001-01-01T00:00:00Z" {
+		return "Never"
+	}
+
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05-07",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05",
+	}
+
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t.Local().Format("2006-01-02 15:04")
+		}
+	}
+
+	return raw
+}
+
+func isMenuHelpInput(input string) bool {
+	v := strings.TrimSpace(strings.ToLower(input))
+	return v == "?" || v == "help"
+}
+
+func sortCharacterSummariesByName(characters []*interfaces.CharacterSummary) []*interfaces.CharacterSummary {
+	sorted := make([]*interfaces.CharacterSummary, len(characters))
+	copy(sorted, characters)
+
+	sort.Slice(sorted, func(i, j int) bool {
+		a := strings.ToLower(sorted[i].Name)
+		b := strings.ToLower(sorted[j].Name)
+		if a == b {
+			return sorted[i].Name < sorted[j].Name
+		}
+		return a < b
+	})
+
+	return sorted
+}
+
+func (sh *SessionHandler) getSortedCharactersForPlayer(client *Client) ([]*interfaces.CharacterSummary, error) {
 	characters, err := sh.repoManager.Characters().GetCharactersByPlayer(client.GetPlayerID())
+	if err != nil {
+		return nil, err
+	}
+	return sortCharacterSummariesByName(characters), nil
+}
+
+func (sh *SessionHandler) showNumberedCharacterList(client *Client, characters []*interfaces.CharacterSummary) {
+	client.Send("No. Name           Race      Class     Level  Status    Last Played")
+	client.Send("--------------------------------------------------------------------")
+	for i, char := range characters {
+		status := "Alive"
+		if !char.IsAlive {
+			status = "Dead"
+		}
+
+		lastPlayed := formatLastPlayed(char.LastPlayed)
+		client.Send(fmt.Sprintf("%-3d %-14s %-9s %-9s %-6d %-9s %s",
+			i+1, char.Name, char.Race, char.Class, char.Level, status, lastPlayed))
+	}
+}
+
+func (sh *SessionHandler) startCharacterSelectByNumber(client *Client) {
+	characters, err := sh.getSortedCharactersForPlayer(client)
 	if err != nil {
 		client.Send("Error retrieving characters.")
 		return
 	}
-
-	for _, char := range characters {
-		if strings.EqualFold(char.Name, name) {
-			client.SetCharacterID(char.ID)
-			client.SetState(StateInGame)
-			client.Send(fmt.Sprintf("Welcome, %s!", char.Name))
-			client.Send("You enter the game world...")
-			client.SendPrompt("> ")
-			return
-		}
+	if len(characters) == 0 {
+		client.Send("You have no characters to select. Use 'create' first.")
+		return
 	}
 
-	client.Send(fmt.Sprintf("Character '%s' not found.", name))
+	client.SetState(StateCharacterSelecting)
+	client.ClearTempMenuData()
+	client.Send("\n--- Character Select ---")
+	client.Send("Type a character number, or 'cancel' to return.")
+	sh.showNumberedCharacterList(client, characters)
+	client.SendPrompt("Select #: ")
+}
+
+func (sh *SessionHandler) handleCharacterSelectByNumber(client *Client, input string) {
+	input = strings.TrimSpace(input)
+	if isMenuHelpInput(input) {
+		characters, err := sh.getSortedCharactersForPlayer(client)
+		if err != nil {
+			client.Send("Error retrieving characters.")
+			client.SetState(StateCharacterSelection)
+			sh.showCharacterMenu(client)
+			return
+		}
+		if len(characters) == 0 {
+			client.Send("You have no characters to select. Use 'create' first.")
+			client.SetState(StateCharacterSelection)
+			sh.showCharacterMenu(client)
+			return
+		}
+		client.Send("\n--- Character Select ---")
+		client.Send("Type a character number, or 'cancel' to return.")
+		sh.showNumberedCharacterList(client, characters)
+		client.SendPrompt("Select #: ")
+		return
+	}
+
+	if strings.EqualFold(input, "cancel") {
+		client.SetState(StateCharacterSelection)
+		client.ClearTempMenuData()
+		client.Send("Selection canceled.")
+		sh.showCharacterMenu(client)
+		return
+	}
+
+	index, err := strconv.Atoi(input)
+	if err != nil {
+		client.Send("Please enter a valid number.")
+		client.SendPrompt("Select #: ")
+		return
+	}
+
+	characters, err := sh.getSortedCharactersForPlayer(client)
+	if err != nil {
+		client.Send("Error retrieving characters.")
+		client.SetState(StateCharacterSelection)
+		sh.showCharacterMenu(client)
+		return
+	}
+	if index < 1 || index > len(characters) {
+		client.Send(fmt.Sprintf("Please enter a number between 1 and %d.", len(characters)))
+		client.SendPrompt("Select #: ")
+		return
+	}
+
+	selected := characters[index-1]
+	client.ClearTempMenuData()
+	client.SetCharacterID(selected.ID)
+	client.SetState(StateInGame)
+	client.Send(fmt.Sprintf("Welcome, %s!", selected.Name))
+	client.Send("You enter the game world...")
+	client.SendPrompt("> ")
 }
 
 func (sh *SessionHandler) createCharacter(client *Client, name, raceStr, classStr string) {
@@ -323,6 +480,25 @@ func (sh *SessionHandler) startCharacterCreation(client *Client) {
 
 func (sh *SessionHandler) handleCharacterCreation(client *Client, input string) {
 	input = strings.TrimSpace(input)
+	if isMenuHelpInput(input) {
+		switch client.GetTempCreationStep() {
+		case 0:
+			client.Send("Enter character name (3-20 letters/numbers):")
+			client.SendPrompt("Name: ")
+		case 1:
+			client.Send("Choose race: human, elf, dwarf")
+			client.SendPrompt("Race: ")
+		case 2:
+			client.Send("Choose class: warrior, mage, rogue")
+			client.SendPrompt("Class: ")
+		case 3:
+			client.Send(fmt.Sprintf("Create character '%s' as %s %s? (yes/no)",
+				client.GetTempCharacterName(), client.GetTempCharacterRace(), client.GetTempCharacterClass()))
+			client.SendPrompt("Confirm: ")
+		}
+		return
+	}
+
 	if strings.EqualFold(input, "cancel") {
 		client.ClearTempCharacterData()
 		client.SetState(StateCharacterSelection)
@@ -409,8 +585,128 @@ func isValidCharacterName(name string) bool {
 	return true
 }
 
-func (sh *SessionHandler) deleteCharacter(client *Client, name string) {
-	client.Send("Character deletion not implemented yet.")
+func (sh *SessionHandler) startCharacterDeleteByNumber(client *Client) {
+	characters, err := sh.getSortedCharactersForPlayer(client)
+	if err != nil {
+		client.Send("Error retrieving characters.")
+		return
+	}
+	if len(characters) == 0 {
+		client.Send("You have no characters to delete.")
+		return
+	}
+
+	client.SetState(StateCharacterDeleting)
+	client.ClearTempMenuData()
+	client.SetTempMenuStep(0)
+	client.Send("\n--- Character Delete ---")
+	client.Send("Choose a character number to delete, or 'cancel' to return.")
+	sh.showNumberedCharacterList(client, characters)
+	client.SendPrompt("Delete #: ")
+}
+
+func (sh *SessionHandler) handleCharacterDeleteByNumber(client *Client, input string) {
+	input = strings.TrimSpace(input)
+	if isMenuHelpInput(input) {
+		if client.GetTempMenuStep() == 0 {
+			characters, err := sh.getSortedCharactersForPlayer(client)
+			if err != nil {
+				client.Send("Error retrieving characters.")
+				client.ClearTempMenuData()
+				client.SetState(StateCharacterSelection)
+				sh.showCharacterMenu(client)
+				return
+			}
+			client.Send("\n--- Character Delete ---")
+			client.Send("Choose a character number to delete, or 'cancel' to return.")
+			sh.showNumberedCharacterList(client, characters)
+			client.SendPrompt("Delete #: ")
+			return
+		}
+
+		client.Send(fmt.Sprintf("To confirm deletion, type the character name exactly: %s",
+			client.GetTempTargetCharacterName()))
+		client.SendPrompt("Confirm Name: ")
+		return
+	}
+
+	if strings.EqualFold(input, "cancel") {
+		client.ClearTempMenuData()
+		client.SetState(StateCharacterSelection)
+		client.Send("Deletion canceled.")
+		sh.showCharacterMenu(client)
+		return
+	}
+
+	switch client.GetTempMenuStep() {
+	case 0:
+		index, err := strconv.Atoi(input)
+		if err != nil {
+			client.Send("Please enter a valid number.")
+			client.SendPrompt("Delete #: ")
+			return
+		}
+
+		characters, err := sh.getSortedCharactersForPlayer(client)
+		if err != nil {
+			client.Send("Error retrieving characters.")
+			client.ClearTempMenuData()
+			client.SetState(StateCharacterSelection)
+			sh.showCharacterMenu(client)
+			return
+		}
+		if index < 1 || index > len(characters) {
+			client.Send(fmt.Sprintf("Please enter a number between 1 and %d.", len(characters)))
+			client.SendPrompt("Delete #: ")
+			return
+		}
+
+		target := characters[index-1]
+		client.SetTempTargetCharacterID(target.ID)
+		client.SetTempTargetCharacterName(target.Name)
+		client.SetTempMenuStep(1)
+		client.Send(fmt.Sprintf("To confirm deletion, type the character name exactly: %s", target.Name))
+		client.SendPrompt("Confirm Name: ")
+	case 1:
+		expectedName := client.GetTempTargetCharacterName()
+		targetID := client.GetTempTargetCharacterID()
+		if expectedName == "" || targetID == "" {
+			client.Send("Deletion context lost. Please try again.")
+			client.ClearTempMenuData()
+			client.SetState(StateCharacterSelection)
+			sh.showCharacterMenu(client)
+			return
+		}
+
+		if input != expectedName {
+			client.Send("Name confirmation did not match. Deletion canceled.")
+			client.ClearTempMenuData()
+			client.SetState(StateCharacterSelection)
+			sh.showCharacterMenu(client)
+			return
+		}
+
+		if err := sh.repoManager.Characters().DeleteCharacter(targetID); err != nil {
+			client.Send("Failed to delete character.")
+			client.ClearTempMenuData()
+			client.SetState(StateCharacterSelection)
+			sh.showCharacterMenu(client)
+			return
+		}
+
+		if client.GetCharacterID() == targetID {
+			client.SetCharacterID("")
+		}
+
+		client.Send(fmt.Sprintf("Character '%s' deleted.", expectedName))
+		client.ClearTempMenuData()
+		client.SetState(StateCharacterSelection)
+		sh.showCharacterMenu(client)
+	default:
+		client.ClearTempMenuData()
+		client.SetState(StateCharacterSelection)
+		sh.showCharacterMenu(client)
+	}
 }
 
 // handleAccountCreation handles the account creation process

@@ -3,28 +3,32 @@ package server
 import (
 	"bufio"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
 
 type Client struct {
-	ID                 string
-	conn               net.Conn
-	reader             *bufio.Reader
-	writer             *bufio.Writer
-	connected          bool
-	playerID           string
-	characterID        string
-	state              ClientState
-	lastActive         time.Time
-	tempUsername       string // For storing username during account creation
-	tempPassword       string // For storing password during confirmation
-	tempEmail          string // For storing email during account creation
-	tempCharacterName  string // For interactive character creation
-	tempCharacterRace  string // For interactive character creation
-	tempCharacterClass string // For interactive character creation
-	tempCreationStep   int    // 0=name, 1=race, 2=class, 3=confirm
-	mutex              sync.RWMutex
+	ID                      string
+	conn                    net.Conn
+	reader                  *bufio.Reader
+	writer                  *bufio.Writer
+	connected               bool
+	playerID                string
+	characterID             string
+	state                   ClientState
+	lastActive              time.Time
+	tempUsername            string // For storing username during account creation
+	tempPassword            string // For storing password during confirmation
+	tempEmail               string // For storing email during account creation
+	tempCharacterName       string // For interactive character creation
+	tempCharacterRace       string // For interactive character creation
+	tempCharacterClass      string // For interactive character creation
+	tempCreationStep        int    // 0=name, 1=race, 2=class, 3=confirm
+	tempTargetCharacterID   string // For guided select/delete flows
+	tempTargetCharacterName string // For guided select/delete flows
+	tempMenuStep            int    // For guided menu flows
+	mutex                   sync.RWMutex
 }
 
 type ClientState int
@@ -36,6 +40,8 @@ const (
 	StateConfirmingPassword
 	StateCharacterSelection
 	StateCharacterCreation
+	StateCharacterSelecting
+	StateCharacterDeleting
 	StateInGame
 	StateDisconnecting
 )
@@ -99,7 +105,7 @@ func (c *Client) ReadLine() (string, error) {
 		line = line[:len(line)-1]
 	}
 
-	return line, nil
+	return sanitizeTelnetInput(line), nil
 }
 
 // ReadPassword reads a password from the client with echo disabled
@@ -340,4 +346,72 @@ func (c *Client) ClearTempCharacterData() {
 	c.tempCharacterRace = ""
 	c.tempCharacterClass = ""
 	c.tempCreationStep = 0
+}
+
+func (c *Client) GetTempTargetCharacterID() string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tempTargetCharacterID
+}
+
+func (c *Client) SetTempTargetCharacterID(id string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempTargetCharacterID = id
+}
+
+func (c *Client) GetTempTargetCharacterName() string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tempTargetCharacterName
+}
+
+func (c *Client) SetTempTargetCharacterName(name string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempTargetCharacterName = name
+}
+
+func (c *Client) GetTempMenuStep() int {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tempMenuStep
+}
+
+func (c *Client) SetTempMenuStep(step int) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempMenuStep = step
+}
+
+func (c *Client) ClearTempMenuData() {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.tempTargetCharacterID = ""
+	c.tempTargetCharacterName = ""
+	c.tempMenuStep = 0
+}
+
+func sanitizeTelnetInput(line string) string {
+	data := []byte(line)
+	clean := make([]byte, 0, len(data))
+
+	for i := 0; i < len(data); i++ {
+		// Telnet IAC command sequence is typically 3 bytes: IAC CMD OPTION.
+		if data[i] == 255 {
+			if i+2 < len(data) {
+				i += 2
+			}
+			continue
+		}
+
+		// Strip non-printable control bytes that can leak from telnet negotiation.
+		if data[i] < 32 {
+			continue
+		}
+
+		clean = append(clean, data[i])
+	}
+
+	return strings.TrimSpace(string(clean))
 }
