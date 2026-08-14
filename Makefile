@@ -1,6 +1,6 @@
 # DungeoGo Makefile
 
-.PHONY: test test-unit test-db test-coverage build clean help docker-up docker-down run
+.PHONY: test test-unit test-db test-coverage build clean help docker-up docker-down run apple-build apple-up apple-down apple-logs apple-status test-db-apple
 
 # Default target
 help:
@@ -20,6 +20,11 @@ help:
 	@echo "Database:"
 	@echo "  docker-up      Start PostgreSQL test container"
 	@echo "  docker-down    Stop PostgreSQL test container"
+	@echo "  apple-build    Build the server image with Apple Container"
+	@echo "  apple-up       Start PostgreSQL and the server with Apple Container"
+	@echo "  apple-down     Stop the Apple Container stack (preserves database data)"
+	@echo "  apple-logs     Show Apple Container server logs"
+	@echo "  test-db-apple  Run database tests with Apple Container"
 	@echo ""
 
 # Unit tests (no database required)
@@ -67,6 +72,25 @@ docker-up:
 
 docker-down:
 	./test-with-db.sh -s
+
+# Apple Container management (macOS 26+ on Apple silicon)
+apple-build:
+	./apple-container.sh build
+
+apple-up:
+	./apple-container.sh up
+
+apple-down:
+	./apple-container.sh down
+
+apple-logs:
+	./apple-container.sh logs
+
+apple-status:
+	./apple-container.sh status
+
+test-db-apple:
+	DUNGEOGO_CONTAINER_RUNTIME=apple ./test-with-db.sh
 
 # Continuous testing (watch for changes)
 test-watch:

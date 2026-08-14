@@ -21,13 +21,14 @@ DungeoGo is a text-based multiplayer game server that implements classic MUD mec
 - **TCP Server**: Multi-client connection handling with session management
 - **Repository Pattern**: Clean separation between business logic and data access
 - **Comprehensive Testing**: 97+ tests with containerized PostgreSQL for integration testing
-- **Docker Support**: Containerized test environment with automatic lifecycle management
+- **Container Support**: Docker/Compose and Apple Container workflows for local PostgreSQL and server runs
 
 ## Quick Start
 
 ### Prerequisites
 - Go 1.19 or later
 - Docker and Docker Compose (for database tests)
+- Or, on Apple silicon with macOS 26+, [Apple Container](https://github.com/apple/container)
 - PostgreSQL (optional, for local development)
 
 ### Installation
@@ -51,6 +52,11 @@ make test-coverage
 # Manual container management
 make docker-up    # Start PostgreSQL container
 make docker-down  # Stop PostgreSQL container
+
+# Apple Container: run PostgreSQL and the MUD server as OCI containers
+make apple-up
+make apple-logs
+make apple-down
 ```
 
 ### Building and Running
@@ -60,6 +66,37 @@ make build
 
 # Run the server (requires PostgreSQL configuration)
 make run
+```
+
+### Apple Container (macOS Tahoe)
+
+Apple Container supports OCI images but does not use Docker Compose. This project
+includes a `Containerfile` and a small orchestration script that starts PostgreSQL
+and the game server on an isolated Apple Container network.
+
+```bash
+# Install Apple Container, then initialize its services once.
+container system start
+
+# Build and start the complete stack.
+make apple-up
+
+# The TCP server is published only to localhost:8080.
+nc 127.0.0.1 8080
+
+# Inspect logs or stop the stack. The PostgreSQL data volume is preserved on stop.
+make apple-logs
+make apple-down
+```
+
+The server image is tagged `dungeogo:local` by default. You can override ports or
+resource names, for example: `PORT=9090 POSTGRES_PORT=5434 make apple-up`.
+
+To use Apple Container for the database-backed test suite while keeping Go tests
+on the host:
+
+```bash
+make test-db-apple
 ```
 
 ## Architecture
@@ -151,6 +188,8 @@ make clean          # Clean build artifacts
 make lint           # Run formatting and linting
 make docker-up      # Start test database
 make docker-down    # Stop test database
+make test-db-apple  # Run database tests with Apple Container
+make apple-up        # Run the complete server stack with Apple Container
 ```
 
 ### Adding New Features
