@@ -38,6 +38,8 @@ type ItemRepository interface {
 }
 
 type WorldRepository interface {
+	SaveRoomDefinition(definition *RoomDefinition) error
+	LoadRoomDefinition(roomID string) (*RoomDefinition, error)
 	SaveRoomState(roomID string, state *RoomState) error
 	LoadRoomState(roomID string) (*RoomState, error)
 	SaveNPCState(npcID string, state *NPCState) error
@@ -57,13 +59,22 @@ type CharacterSummary struct {
 	IsAlive    bool
 }
 
-type RoomState struct {
+type RoomDefinition struct {
 	ID          string
-	Items       []string
-	NPCs        []string
-	Players     []string
+	ZoneID      string
+	Name        string
+	Description string
+	Exits       map[string]string
 	Flags       map[string]interface{}
-	LastUpdate  string
+}
+
+type RoomState struct {
+	ID         string
+	Items      []string
+	NPCs       []string
+	Players    []string
+	Flags      map[string]interface{}
+	LastUpdate string
 }
 
 type NPCState struct {

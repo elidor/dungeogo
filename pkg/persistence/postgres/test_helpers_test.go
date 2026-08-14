@@ -138,10 +138,22 @@ func createTestSchema(repoManager *PostgreSQLRepositoryManager) error {
 		last_used TIMESTAMP WITH TIME ZONE
 	);
 
+	CREATE TABLE room_definitions (
+		room_id VARCHAR(100) PRIMARY KEY,
+		zone_id VARCHAR(100) NOT NULL,
+		name VARCHAR(255) NOT NULL,
+		description TEXT NOT NULL,
+		exits JSONB NOT NULL DEFAULT '{}',
+		flags JSONB NOT NULL DEFAULT '{}',
+		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+		updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+	);
+
 	CREATE INDEX idx_characters_player_id ON characters(player_id);
 	CREATE INDEX idx_characters_name ON characters(name);
 	CREATE INDEX idx_item_instances_owner ON item_instances(owner_id);
 	CREATE INDEX idx_item_instances_template ON item_instances(template_id);
+	CREATE INDEX idx_room_definitions_zone_id ON room_definitions(zone_id);
 	`
 
 	_, err := repoManager.GetDB().Exec(schema)

@@ -431,6 +431,18 @@ func (sh *SessionHandler) handleCharacterSelectByNumber(client *Client, input st
 	client.SetState(StateInGame)
 	client.Send(fmt.Sprintf("Welcome, %s!", selected.Name))
 	client.Send("You enter the game world...")
+
+	// Show the character's surroundings immediately, just as if they had run
+	// the look command after entering the game.
+	responses, err := sh.gameEngine.ProcessCommand(selected.ID, "look")
+	if err != nil {
+		client.Send(fmt.Sprintf("Error displaying current room: %v", err))
+	} else {
+		for _, response := range responses {
+			client.Send(response)
+		}
+	}
+
 	client.SendPrompt("> ")
 }
 

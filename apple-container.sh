@@ -80,7 +80,15 @@ wait_for_postgres() {
 build() {
     require_container
     log "Building $IMAGE_NAME..."
-    "$CONTAINER_CLI" build --tag "$IMAGE_NAME" "$SCRIPT_DIR"
+    log "Compiling the Linux ARM64 server binary..."
+    (
+        cd "$SCRIPT_DIR"
+        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o bin/dungeogo ./cmd/server
+    )
+
+    # Package the binary built above rather than relying on Apple Container's
+    # stale source-context cache.
+    "$CONTAINER_CLI" build --no-cache --file "$SCRIPT_DIR/Containerfile.apple" --tag "$IMAGE_NAME" "$SCRIPT_DIR"
 }
 
 up() {
@@ -112,6 +120,8 @@ up() {
     "$CONTAINER_CLI" run --detach --name "$SERVER_CONTAINER" \
         --network "$NETWORK_NAME" \
         --publish "127.0.0.1:${SERVER_PORT}:8080" \
+        --mount "type=bind,source=${SCRIPT_DIR}/bin,target=/app,readonly" \
+        --entrypoint /app/dungeogo \
         --env BIND_ADDRESS=0.0.0.0 \
         --env PORT=8080 \
         --env "DATABASE_URL=postgres://dungeogo_user:dungeogo_password@${db_ip}:5432/dungeogo?sslmode=disable" \
