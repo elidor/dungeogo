@@ -264,3 +264,11 @@ world definition. Missing rooms, empty locations, and mismatched zones recover t
 the configured spawn and persist that recovery. Storage failures keep the player
 at character selection. Movement commits its destination before reporting success;
 blocked exits and failed writes preserve the saved location.
+
+The server tracks authenticated accounts and selected characters in memory. Each
+account has one active session: successful login replaces its previous connection
+immediately, including before a character is selected. Failed authentication
+preserves the current connection. `who` lists only characters selected in live
+sessions; replacement and disconnect remove the old character from that list.
+Account actions and login replacement are serialized so stale sessions cannot
+change game state or unregister their replacements.

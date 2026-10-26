@@ -108,3 +108,12 @@ type RepositoryManager interface {
 	World() WorldRepository
 	Close() error
 }
+
+// OnlineCharacter is a value snapshot of a character selected in a live session.
+type OnlineCharacter struct {
+	ID    string
+	Name  string
+	Race  string
+	Class string
+	Level int
+}

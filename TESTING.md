@@ -205,3 +205,16 @@ dropping their database. Run them with the race detector using:
 ```bash
 DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/integration -run TestSessionLocation
 ```
+
+## Online presence and replacement sessions
+
+`TestPresenceSession` uses TCP sessions and PostgreSQL to verify actual `who`
+output, failed authentication, replacement before character selection, stale
+socket cleanup, ordinary disconnects, new-account registration, and concurrent
+successful logins. `pkg/server` registry tests also cover rejected stale actions,
+in-flight action ordering, concurrent replacement, immutable presence snapshots,
+and closing a socket with a stalled writer.
+
+```bash
+DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/server ./pkg/integration
+```

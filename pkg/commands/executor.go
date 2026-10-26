@@ -32,6 +32,11 @@ func NewExecutor(repoManager interfaces.RepositoryManager) *Executor {
 	return e
 }
 
+// SetOnlineCharacters wires the process-owned presence source before sessions start.
+func (e *Executor) SetOnlineCharacters(source func() []interfaces.OnlineCharacter) {
+	e.handlers["who"] = &WhoHandler{onlineCharacters: source}
+}
+
 func (e *Executor) Execute(cmd *Command) ([]string, error) {
 	if cmd.Type == CommandUnknown {
 		return []string{fmt.Sprintf("Unknown command: %s", cmd.Verb)}, nil
@@ -238,15 +243,24 @@ func (h *ExamineHandler) Execute(cmd *Command) ([]string, error) {
 	return []string{fmt.Sprintf("You examine %s closely.", target)}, nil
 }
 
-type WhoHandler struct{}
+type WhoHandler struct {
+	onlineCharacters func() []interfaces.OnlineCharacter
+}
 
 func (h *WhoHandler) Execute(cmd *Command) ([]string, error) {
-	return []string{
-		"Players currently online:",
-		"  TestPlayer (Human Warrior, Level 1)",
-		"",
-		"1 player online.",
-	}, nil
+	responses := []string{"Players currently online:"}
+	var online []interfaces.OnlineCharacter
+	if h.onlineCharacters != nil {
+		online = h.onlineCharacters()
+	}
+	for _, c := range online {
+		responses = append(responses, fmt.Sprintf("  %s (%s %s, Level %d)", c.Name, c.Race, c.Class, c.Level))
+	}
+	noun := "players"
+	if len(online) == 1 {
+		noun = "player"
+	}
+	return append(responses, "", fmt.Sprintf("%d %s online.", len(online), noun)), nil
 }
 
 type ScoreHandler struct {

@@ -2,7 +2,7 @@ package game
 
 import (
 	"fmt"
-	
+
 	"github.com/elidor/dungeogo/pkg/commands"
 	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 )
@@ -16,7 +16,7 @@ type Engine struct {
 func NewEngine(repoManager interfaces.RepositoryManager) *Engine {
 	parser := commands.NewParser()
 	executor := commands.NewExecutor(repoManager)
-	
+
 	return &Engine{
 		repoManager: repoManager,
 		parser:      parser,
@@ -30,16 +30,16 @@ func (e *Engine) ProcessCommand(characterID string, input string) ([]string, err
 	if err != nil {
 		return nil, fmt.Errorf("character not found: %w", err)
 	}
-	
+
 	// Parse the command
 	cmd := e.parser.Parse(input, character.PlayerID, characterID)
-	
+
 	// Execute the command
 	responses, err := e.executor.Execute(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("command execution failed: %w", err)
 	}
-	
+
 	return responses, nil
 }
 
@@ -48,6 +48,11 @@ func (e *Engine) GetCharacterState(characterID string) (interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get character state: %w", err)
 	}
-	
+
 	return character, nil
+}
+
+// SetOnlineCharacters supplies who with live process-owned presence.
+func (e *Engine) SetOnlineCharacters(source func() []interfaces.OnlineCharacter) {
+	e.executor.SetOnlineCharacters(source)
 }
