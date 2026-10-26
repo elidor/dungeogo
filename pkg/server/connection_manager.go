@@ -175,18 +175,8 @@ func (cm *ConnectionManager) BroadcastToAll(message string) {
 }
 
 func (cm *ConnectionManager) BroadcastToRoom(roomID, message string) {
-	cm.mutex.RLock()
-	clients := make([]*Client, 0)
-	for _, client := range cm.clients {
-		if client.IsConnected() && client.GetState() == StateInGame {
-			// TODO: Check if client's character is in the specified room
-			clients = append(clients, client)
-		}
-	}
-	cm.mutex.RUnlock()
-
-	for _, client := range clients {
-		client.Send(message)
+	if scoped, ok := cm.handler.(interface{ BroadcastToRoom(string, string) }); ok {
+		scoped.BroadcastToRoom(roomID, message)
 	}
 }
 

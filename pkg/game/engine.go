@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/elidor/dungeogo/pkg/commands"
+	"github.com/elidor/dungeogo/pkg/game/world"
 	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 )
 
@@ -24,24 +25,26 @@ func NewEngine(repoManager interfaces.RepositoryManager) *Engine {
 	}
 }
 
-func (e *Engine) ProcessCommand(characterID string, input string) ([]string, error) {
-	// Get character to validate it exists and get player ID
-	character, err := e.repoManager.Characters().GetCharacter(characterID)
-	if err != nil {
-		return nil, fmt.Errorf("character not found: %w", err)
-	}
-
-	// Parse the command
-	cmd := e.parser.Parse(input, character.PlayerID, characterID)
-
-	// Execute the command
-	responses, err := e.executor.Execute(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("command execution failed: %w", err)
-	}
-
-	return responses, nil
+// ProcessCommand preserves callers that consume only the actor's responses.
+func (e *Engine) ProcessCommand(characterID, input string) ([]string, error) {
+	result, err := e.ProcessAction(characterID, input)
+	return result.Replies(characterID), err
 }
+
+func (e *Engine) ProcessAction(characterID, input string) (world.Result, error) {
+	actor, err := e.repoManager.Characters().GetCharacter(characterID)
+	if err != nil {
+		return world.Result{}, fmt.Errorf("character not found: %w", err)
+	}
+	cmd := e.parser.Parse(input, actor.PlayerID, characterID)
+	result, err := e.executor.ExecuteAction(cmd)
+	if err != nil {
+		return world.Result{}, fmt.Errorf("command execution failed: %w", err)
+	}
+	return result, nil
+}
+
+func (e *Engine) SetPresence(presence world.Presence) { e.executor.SetPresence(presence) }
 
 func (e *Engine) GetCharacterState(characterID string) (interface{}, error) {
 	character, err := e.repoManager.Characters().GetCharacter(characterID)

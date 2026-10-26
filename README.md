@@ -272,3 +272,9 @@ preserves the current connection. `who` lists only characters selected in live
 sessions; replacement and disconnect remove the old character from that list.
 Account actions and login replacement are serialized so stale sessions cannot
 change game state or unregister their replacements.
+
+`look` lists the other live characters in your room. Movement commits the new
+room and zone before updating live membership, then announces departure to the
+old room and arrival to the destination. Unrelated rooms receive neither event.
+Blocked exits and failed database writes leave both locations unchanged. Socket
+delivery failures do not undo committed movement; reconnect restores its destination.

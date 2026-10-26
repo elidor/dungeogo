@@ -11,6 +11,7 @@ import (
 
 	"github.com/elidor/dungeogo/pkg/game/character"
 	"github.com/elidor/dungeogo/pkg/game/player"
+	"github.com/elidor/dungeogo/pkg/game/world"
 	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -23,6 +24,8 @@ type SessionHandler struct {
 }
 
 type GameEngine interface {
+	SetPresence(world.Presence)
+	ProcessAction(string, string) (world.Result, error)
 	SetOnlineCharacters(func() []interfaces.OnlineCharacter)
 	ProcessCommand(characterID string, command string) ([]string, error)
 	GetCharacterState(characterID string) (interface{}, error)
@@ -31,6 +34,7 @@ type GameEngine interface {
 func NewSessionHandler(repoManager interfaces.RepositoryManager, gameEngine GameEngine) *SessionHandler {
 	registry := NewSessionRegistry()
 	gameEngine.SetOnlineCharacters(registry.Characters)
+	gameEngine.SetPresence(registry)
 	return &SessionHandler{
 		repoManager:  repoManager,
 		gameEngine:   gameEngine,
@@ -248,17 +252,30 @@ func (sh *SessionHandler) handleGameCommand(client *Client, input string) {
 		return
 	}
 
-	// Process command through game engine
-	responses, err := sh.gameEngine.ProcessCommand(characterID, input)
+	// Gameplay returns addressed effects; this layer owns network delivery.
+	result, err := sh.gameEngine.ProcessAction(characterID, input)
 	if err != nil {
 		client.Send(fmt.Sprintf("Error: %v", err))
 	} else {
-		for _, response := range responses {
-			client.Send(response)
-		}
+		sh.deliver(result)
 	}
 
 	client.SendPrompt("> ")
+}
+
+func (sh *SessionHandler) deliver(result world.Result) {
+	for _, message := range result.Messages {
+		for _, recipient := range sh.presence.Recipients(message) {
+			if err := recipient.Send(message.Text); err != nil {
+				recipient.Close()
+			}
+		}
+	}
+}
+
+// BroadcastToRoom preserves the connection manager's public transport API.
+func (sh *SessionHandler) BroadcastToRoom(roomID, message string) {
+	sh.deliver(world.Result{Messages: []world.Message{{Scope: world.ToRoom, RoomID: roomID, Text: message}}})
 }
 
 func (sh *SessionHandler) handleInGameQuit(client *Client, characterID string) {

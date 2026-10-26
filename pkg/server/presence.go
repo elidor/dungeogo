@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/elidor/dungeogo/pkg/game/character"
+	"github.com/elidor/dungeogo/pkg/game/world"
 	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 )
 
@@ -77,6 +78,10 @@ func (r *SessionRegistry) Select(client *Client, selected *character.Character) 
 	if selected.Class != nil {
 		entry.Class = selected.Class.Name
 	}
+	if selected.Location != nil {
+		entry.RoomID = selected.Location.RoomID
+		entry.ZoneID = selected.Location.ZoneID
+	}
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	if account := r.accounts[client.GetPlayerID()]; account != nil && account.client == client {
@@ -113,4 +118,39 @@ func (r *SessionRegistry) Characters() []interfaces.OnlineCharacter {
 	}
 	sort.Slice(online, func(i, j int) bool { return online[i].Name < online[j].Name })
 	return online
+}
+
+// Move updates derived membership only after the durable movement commits.
+// The account gate prevents a replacement from racing its own movement action.
+func (r *SessionRegistry) Move(characterID string, location character.Location) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	for _, account := range r.accounts {
+		if account.character != nil && account.character.ID == characterID {
+			account.character.RoomID = location.RoomID
+			account.character.ZoneID = location.ZoneID
+		}
+	}
+}
+
+// Recipients resolves a delivery effect to current selected sessions. Socket I/O
+// happens after releasing the registry lock; a failed send cannot undo an action.
+func (r *SessionRegistry) Recipients(message world.Message) []*Client {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	var recipients []*Client
+	for _, account := range r.accounts {
+		c := account.character
+		if account.client == nil || c == nil || !account.client.IsConnected() || account.client.GetState() != StateInGame {
+			continue
+		}
+		matches := message.Scope == world.ToCharacter && c.ID == message.CharacterID
+		if message.Scope == world.ToRoom {
+			matches = c.RoomID == message.RoomID && c.ID != message.ExcludeCharacterID
+		}
+		if matches {
+			recipients = append(recipients, account.client)
+		}
+	}
+	return recipients
 }

@@ -218,3 +218,19 @@ and closing a socket with a stalled writer.
 ```bash
 DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/server ./pkg/integration
 ```
+
+## Room presence and movement delivery
+
+`TestRoomPresence` uses four TCP clients across three rooms to check occupant
+lists, departure/arrival scope, blocked exits, failed persistence, replacement
+before character selection, reconnect, and disconnect cleanup. An injected
+server-side socket write failure verifies that committed movement survives a
+failed delivery and is restored on reconnect.
+
+```bash
+DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/server ./pkg/integration ./pkg/commands
+```
+
+World actions return addressed results in `pkg/game/world`. Legacy command APIs
+still return actor-only text; the TCP handler resolves room effects through live
+presence and owns socket delivery.
