@@ -71,7 +71,7 @@ func (r *SessionRegistry) WithSession(client *Client, action func()) bool {
 
 // Select is called inside WithSession after durable location recovery succeeds.
 func (r *SessionRegistry) Select(client *Client, selected *character.Character) {
-	entry := &interfaces.OnlineCharacter{ID: selected.ID, Name: selected.Name, Level: selected.Level}
+	entry := &interfaces.OnlineCharacter{SessionID: client.GetID(), ID: selected.ID, Name: selected.Name, Level: selected.Level}
 	if selected.Race != nil {
 		entry.Race = selected.Race.Name
 	}
@@ -144,7 +144,7 @@ func (r *SessionRegistry) Recipients(message world.Message) []*Client {
 		if account.client == nil || c == nil || !account.client.IsConnected() || account.client.GetState() != StateInGame {
 			continue
 		}
-		matches := message.Scope == world.ToCharacter && c.ID == message.CharacterID
+		matches := message.Scope == world.ToCharacter && c.ID == message.CharacterID && (message.SessionID == "" || message.SessionID == account.client.GetID())
 		if message.Scope == world.ToRoom {
 			matches = c.RoomID == message.RoomID && c.ID != message.ExcludeCharacterID
 		}

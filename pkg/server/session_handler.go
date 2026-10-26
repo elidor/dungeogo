@@ -265,10 +265,20 @@ func (sh *SessionHandler) handleGameCommand(client *Client, input string) {
 
 func (sh *SessionHandler) deliver(result world.Result) {
 	for _, message := range result.Messages {
+		delivered := false
 		for _, recipient := range sh.presence.Recipients(message) {
 			if err := recipient.Send(message.Text); err != nil {
 				recipient.Close()
+			} else {
+				delivered = true
 			}
+		}
+		if report := message.Report; report != nil {
+			text := report.Failure
+			if delivered {
+				text = report.Success
+			}
+			sh.deliver(world.Reply(report.CharacterID, text))
 		}
 	}
 }

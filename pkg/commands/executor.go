@@ -49,6 +49,12 @@ func (e *Executor) ExecuteAction(cmd *Command) (world.Result, error) {
 		if cmd.Type == CommandMovement {
 			return e.worldActions.Move(cmd.CharacterID, cmd.Verb), nil
 		}
+		if cmd.Verb == "tell" {
+			if len(cmd.Args) < 2 {
+				return world.Reply(cmd.CharacterID, "Usage: tell <character> <message>"), nil
+			}
+			return e.worldActions.Tell(cmd.CharacterID, cmd.Args[0], strings.Join(cmd.Args[1:], " ")), nil
+		}
 		if cmd.Verb == "say" {
 			return e.worldActions.Say(cmd.CharacterID, strings.Join(cmd.Args, " ")), nil
 		}
@@ -166,13 +172,9 @@ type TellHandler struct {
 
 func (h *TellHandler) Execute(cmd *Command) ([]string, error) {
 	if len(cmd.Args) < 2 {
-		return []string{"Usage: tell <player> <message>"}, nil
+		return []string{"Usage: tell <character> <message>"}, nil
 	}
-
-	target := cmd.Args[0]
-	message := strings.Join(cmd.Args[1:], " ")
-
-	return []string{fmt.Sprintf("You tell %s: %s", target, message)}, nil
+	return actions.NewWorld(h.repoManager).Tell(cmd.CharacterID, cmd.Args[0], strings.Join(cmd.Args[1:], " ")).Replies(cmd.CharacterID), nil
 }
 
 type YellHandler struct{}
