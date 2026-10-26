@@ -74,6 +74,10 @@ func (s *locationSession) send(input string) {
 
 func (s *locationSession) until(text string) string {
 	s.t.Helper()
+	// Usage strings contain angle brackets; only a prompt at a new line completes a command.
+	if text == "> " {
+		text = "\r\n> "
+	}
 	out, err := readUntilContains(s.conn, s.reader, text)
 	if err != nil {
 		s.t.Fatalf("waiting for %q: %v; output=%q", text, err, out)

@@ -247,3 +247,17 @@ room storage; none may fabricate a broadcast.
 ```bash
 DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/integration -run TestLocalCommunication
 ```
+
+## Private messages
+
+`TestPrivateTell` uses real TCP sessions and PostgreSQL to verify cross-room tell,
+character-name resolution rather than account usernames, case-insensitive matches,
+syntax failures, offline targets, self-tell, reconnect, and bystander isolation.
+A paused engine deterministically disconnects or replaces the recipient between
+resolution and delivery, including replacement with the same or a different
+character. A failed socket write must report failure to the sender. Domain tests
+cover exact-case disambiguation and delayed success confirmation.
+
+```bash
+DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/server ./pkg/integration ./pkg/commands ./pkg/game/actions
+```

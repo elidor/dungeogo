@@ -154,7 +154,7 @@ func TestExecuteTellCommand(t *testing.T) {
 
 	executor := NewExecutor(repoManager)
 
-	// Test valid tell command
+	// Without live presence, tell must not fabricate successful delivery.
 	cmd := &Command{
 		Type:        CommandCommunication,
 		Verb:        "tell",
@@ -172,7 +172,7 @@ func TestExecuteTellCommand(t *testing.T) {
 		t.Errorf("Expected 1 response, got %d", len(responses))
 	}
 
-	expected := "You tell bob: hello there"
+	expected := `Character "bob" is not available for private messages.`
 	if responses[0] != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, responses[0])
 	}

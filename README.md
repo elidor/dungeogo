@@ -284,3 +284,11 @@ your current room, with feedback to the sender. Recipients see the sender's
 character name and message; other rooms receive nothing. Moving, disconnecting,
 and reconnecting change subsequent delivery through live room membership. Empty
 messages and invalid or unavailable locations report failure without broadcasting.
+
+`tell <character> <message>` sends a private message across rooms. Targets are
+selected online character names, not account usernames or name prefixes. Name
+matching ignores case when unique; exact capitalization disambiguates names that
+only differ by case. Only the recipient receives the private content, and the
+sender receives confirmation after a successful socket write. Missing or offline
+targets, replacement during delivery, and failed writes report unavailability;
+messages are never queued for a future login.

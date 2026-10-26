@@ -13,13 +13,14 @@ type Room struct {
 }
 
 type OnlineCharacter struct {
-	ID     string
-	Name   string
-	Race   string
-	Class  string
-	Level  int
-	RoomID string
-	ZoneID string
+	SessionID string
+	ID        string
+	Name      string
+	Race      string
+	Class     string
+	Level     int
+	RoomID    string
+	ZoneID    string
 }
 
 // Presence supplies live character snapshots and applies committed locations.
@@ -36,8 +37,19 @@ const (
 	ToRoom
 )
 
+// DeliveryReport describes sender feedback after a transport delivery attempt.
+// Successful socket writes acknowledge delivery; absent or failed recipients do not.
+type DeliveryReport struct {
+	CharacterID string
+	Success     string
+	Failure     string
+}
+
 // Message describes recipients without depending on network connections.
+// SessionID pins private content to the session selected during name resolution.
 type Message struct {
+	SessionID          string
+	Report             *DeliveryReport
 	Scope              Scope
 	CharacterID        string
 	RoomID             string
