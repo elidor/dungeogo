@@ -4,161 +4,157 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	
+
 	"github.com/elidor/dungeogo/pkg/game/items"
 )
 
-type ItemRepository struct {
-	db *sql.DB
-}
+type ItemRepository struct{ db *sql.DB }
 
-func NewItemRepository(db *sql.DB) *ItemRepository {
-	return &ItemRepository{db: db}
+func NewItemRepository(db *sql.DB) *ItemRepository { return &ItemRepository{db: db} }
+
+// resolveOwner preserves callers that supply only owner_id. Ambiguous legacy
+// identifiers require an explicit kind; generated foreign keys enforce existence.
+func (r *ItemRepository) resolveOwner(id string, kind items.OwnerKind) (items.OwnerKind, error) {
+	if kind != "" {
+		if kind != items.OwnerRoom && kind != items.OwnerCharacter {
+			return "", fmt.Errorf("invalid item owner kind %q", kind)
+		}
+		return kind, nil
+	}
+	var room, character bool
+	err := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM room_definitions WHERE room_id=$1), EXISTS(SELECT 1 FROM characters WHERE id::text=$1)`, id).Scan(&room, &character)
+	if err != nil {
+		return "", fmt.Errorf("resolve item owner: %w", err)
+	}
+	if room == character {
+		return "", fmt.Errorf("item owner %q must identify exactly one existing room or character; specify owner kind for ambiguous IDs", id)
+	}
+	if room {
+		return items.OwnerRoom, nil
+	}
+	return items.OwnerCharacter, nil
 }
 
 func (r *ItemRepository) CreateItemInstance(item *items.ItemInstance) error {
-	enchantmentsJSON, err := json.Marshal(item.Enchantments)
+	kind, err := r.resolveOwner(item.OwnerID, item.OwnerKind)
 	if err != nil {
-		return fmt.Errorf("failed to marshal enchantments: %w", err)
+		return err
 	}
-	
-	modificationsJSON, err := json.Marshal(item.Modifications)
+	enchantments, err := json.Marshal(item.Enchantments)
 	if err != nil {
-		return fmt.Errorf("failed to marshal modifications: %w", err)
+		return err
 	}
-	
-	query := `
-		INSERT INTO item_instances (id, template_id, owner_id, quantity, durability,
-			enchantments, custom_name, modifications, created_at, last_used)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
-	
-	_, err = r.db.Exec(query, item.ID, item.TemplateID, item.OwnerID,
-		item.Quantity, item.Durability, enchantmentsJSON, item.CustomName,
-		modificationsJSON, item.CreatedAt, item.LastUsed)
-	
+	modifications, err := json.Marshal(item.Modifications)
 	if err != nil {
-		return fmt.Errorf("failed to create item instance: %w", err)
+		return err
 	}
-	
+	_, err = r.db.Exec(`INSERT INTO item_instances (id,template_id,owner_kind,owner_id,quantity,durability,enchantments,custom_name,modifications,created_at,last_used) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, item.ID, item.TemplateID, kind, item.OwnerID, item.Quantity, item.Durability, enchantments, item.CustomName, modifications, item.CreatedAt, sql.NullTime{Time: item.LastUsed, Valid: !item.LastUsed.IsZero()})
+	if err != nil {
+		return fmt.Errorf("create item instance: %w", err)
+	}
+	item.OwnerKind = kind
 	return nil
 }
 
-func (r *ItemRepository) GetItemInstance(itemID string) (*items.ItemInstance, error) {
-	query := `
-		SELECT id, template_id, owner_id, quantity, durability, enchantments,
-			custom_name, modifications, created_at, last_used
-		FROM item_instances WHERE id = $1`
-	
+const itemColumns = `id,template_id,owner_kind,owner_id,quantity,durability,enchantments,COALESCE(custom_name,''),modifications,created_at,last_used`
+
+type itemScanner interface{ Scan(...interface{}) error }
+
+func scanItem(row itemScanner) (*items.ItemInstance, error) {
 	item := &items.ItemInstance{}
-	var enchantmentsJSON, modificationsJSON []byte
-	
-	err := r.db.QueryRow(query, itemID).Scan(
-		&item.ID, &item.TemplateID, &item.OwnerID, &item.Quantity,
-		&item.Durability, &enchantmentsJSON, &item.CustomName,
-		&modificationsJSON, &item.CreatedAt, &item.LastUsed)
-	
+	var enchantments, modifications []byte
+	var lastUsed sql.NullTime
+	if err := row.Scan(&item.ID, &item.TemplateID, &item.OwnerKind, &item.OwnerID, &item.Quantity, &item.Durability, &enchantments, &item.CustomName, &modifications, &item.CreatedAt, &lastUsed); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(enchantments, &item.Enchantments); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(modifications, &item.Modifications); err != nil {
+		return nil, err
+	}
+	item.LastUsed = lastUsed.Time
+	return item, nil
+}
+
+func (r *ItemRepository) GetItemInstance(id string) (*items.ItemInstance, error) {
+	item, err := scanItem(r.db.QueryRow(`SELECT `+itemColumns+` FROM item_instances WHERE id=$1`, id))
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("item instance not found: %s", itemID)
-		}
-		return nil, fmt.Errorf("failed to get item instance: %w", err)
+		return nil, fmt.Errorf("get item instance %q: %w", id, err)
 	}
-	
-	if err := json.Unmarshal(enchantmentsJSON, &item.Enchantments); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal enchantments: %w", err)
-	}
-	
-	if err := json.Unmarshal(modificationsJSON, &item.Modifications); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal modifications: %w", err)
-	}
-	
 	return item, nil
 }
 
 func (r *ItemRepository) UpdateItemInstance(item *items.ItemInstance) error {
-	enchantmentsJSON, err := json.Marshal(item.Enchantments)
+	kind, err := r.resolveOwner(item.OwnerID, item.OwnerKind)
 	if err != nil {
-		return fmt.Errorf("failed to marshal enchantments: %w", err)
+		return err
 	}
-	
-	modificationsJSON, err := json.Marshal(item.Modifications)
+	enchantments, err := json.Marshal(item.Enchantments)
 	if err != nil {
-		return fmt.Errorf("failed to marshal modifications: %w", err)
+		return err
 	}
-	
-	query := `
-		UPDATE item_instances SET template_id = $2, owner_id = $3, quantity = $4,
-			durability = $5, enchantments = $6, custom_name = $7, modifications = $8,
-			last_used = $9
-		WHERE id = $1`
-	
-	_, err = r.db.Exec(query, item.ID, item.TemplateID, item.OwnerID,
-		item.Quantity, item.Durability, enchantmentsJSON, item.CustomName,
-		modificationsJSON, item.LastUsed)
-	
+	modifications, err := json.Marshal(item.Modifications)
 	if err != nil {
-		return fmt.Errorf("failed to update item instance: %w", err)
+		return err
 	}
-	
+	result, err := r.db.Exec(`UPDATE item_instances SET template_id=$2,owner_kind=$3,owner_id=$4,quantity=$5,durability=$6,enchantments=$7,custom_name=$8,modifications=$9,last_used=$10 WHERE id=$1`, item.ID, item.TemplateID, kind, item.OwnerID, item.Quantity, item.Durability, enchantments, item.CustomName, modifications, sql.NullTime{Time: item.LastUsed, Valid: !item.LastUsed.IsZero()})
+	if err := requireItemUpdate(result, err); err != nil {
+		return err
+	}
+	item.OwnerKind = kind
 	return nil
 }
 
-func (r *ItemRepository) DeleteItemInstance(itemID string) error {
-	query := `DELETE FROM item_instances WHERE id = $1`
-	_, err := r.db.Exec(query, itemID)
-	if err != nil {
-		return fmt.Errorf("failed to delete item instance: %w", err)
-	}
-	return nil
+func (r *ItemRepository) DeleteItemInstance(id string) error {
+	result, err := r.db.Exec(`DELETE FROM item_instances WHERE id=$1`, id)
+	return requireItemUpdate(result, err)
 }
 
-func (r *ItemRepository) GetPlayerItems(characterID string) ([]*items.ItemInstance, error) {
-	query := `
-		SELECT id, template_id, owner_id, quantity, durability, enchantments,
-			custom_name, modifications, created_at, last_used
-		FROM item_instances WHERE owner_id = $1`
-	
-	rows, err := r.db.Query(query, characterID)
+func (r *ItemRepository) GetPlayerItems(id string) ([]*items.ItemInstance, error) {
+	return r.getOwnedItems(items.OwnerCharacter, id)
+}
+func (r *ItemRepository) GetRoomItems(id string) ([]*items.ItemInstance, error) {
+	return r.getOwnedItems(items.OwnerRoom, id)
+}
+func (r *ItemRepository) getOwnedItems(kind items.OwnerKind, id string) ([]*items.ItemInstance, error) {
+	rows, err := r.db.Query(`SELECT `+itemColumns+` FROM item_instances WHERE owner_kind=$1 AND owner_id=$2 ORDER BY id`, kind, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get player items: %w", err)
+		return nil, fmt.Errorf("list item instances: %w", err)
 	}
 	defer rows.Close()
-	
-	var itemInstances []*items.ItemInstance
+	var result []*items.ItemInstance
 	for rows.Next() {
-		item := &items.ItemInstance{}
-		var enchantmentsJSON, modificationsJSON []byte
-		
-		err := rows.Scan(&item.ID, &item.TemplateID, &item.OwnerID,
-			&item.Quantity, &item.Durability, &enchantmentsJSON,
-			&item.CustomName, &modificationsJSON, &item.CreatedAt, &item.LastUsed)
+		item, err := scanItem(rows)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan item instance: %w", err)
+			return nil, fmt.Errorf("read item instance: %w", err)
 		}
-		
-		if err := json.Unmarshal(enchantmentsJSON, &item.Enchantments); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal enchantments: %w", err)
-		}
-		
-		if err := json.Unmarshal(modificationsJSON, &item.Modifications); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal modifications: %w", err)
-		}
-		
-		itemInstances = append(itemInstances, item)
+		result = append(result, item)
 	}
-	
-	return itemInstances, nil
+	return result, rows.Err()
 }
 
-func (r *ItemRepository) GetRoomItems(roomID string) ([]*items.ItemInstance, error) {
-	return r.GetPlayerItems(roomID) // Same logic, different owner
-}
-
-func (r *ItemRepository) TransferItem(itemID, newOwnerID string) error {
-	query := `UPDATE item_instances SET owner_id = $1 WHERE id = $2`
-	_, err := r.db.Exec(query, newOwnerID, itemID)
+// TransferItem preserves the legacy repository API for valid unambiguous owners.
+// Gameplay's conditional pickup/drop operations are introduced separately in #10.
+func (r *ItemRepository) TransferItem(id, newOwnerID string) error {
+	kind, err := r.resolveOwner(newOwnerID, "")
 	if err != nil {
-		return fmt.Errorf("failed to transfer item: %w", err)
+		return err
+	}
+	result, err := r.db.Exec(`UPDATE item_instances SET owner_kind=$1,owner_id=$2 WHERE id=$3`, kind, newOwnerID, id)
+	return requireItemUpdate(result, err)
+}
+
+func requireItemUpdate(result sql.Result, err error) error {
+	if err != nil {
+		return fmt.Errorf("write item instance: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return fmt.Errorf("item instance not found")
 	}
 	return nil
 }

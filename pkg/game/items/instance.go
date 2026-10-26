@@ -1,20 +1,30 @@
 package items
 
 import (
+	"fmt"
+	"strings"
 	"time"
 )
 
+type OwnerKind string
+
+const (
+	OwnerRoom      OwnerKind = "room"
+	OwnerCharacter OwnerKind = "character"
+)
+
 type ItemInstance struct {
-	ID           string
-	TemplateID   string
-	OwnerID      string
-	Quantity     int
-	Durability   int
-	Enchantments []Enchantment
-	CustomName   string
+	OwnerKind     OwnerKind
+	ID            string
+	TemplateID    string
+	OwnerID       string
+	Quantity      int
+	Durability    int
+	Enchantments  []Enchantment
+	CustomName    string
 	Modifications map[string]interface{}
-	CreatedAt    time.Time
-	LastUsed     time.Time
+	CreatedAt     time.Time
+	LastUsed      time.Time
 }
 
 type Enchantment struct {
@@ -49,12 +59,31 @@ func NewItemInstance(templateID, ownerID string, quantity int) *ItemInstance {
 	}
 }
 
+var displayTemplates = NewItemRegistry()
+
 func (ii *ItemInstance) GetDisplayName() string {
 	if ii.CustomName != "" {
 		return ii.CustomName
 	}
-	// Would normally look up template name
+	if template, err := displayTemplates.GetTemplate(ii.TemplateID); err == nil {
+		return template.Name
+	}
+	if ii.TemplateID != "" {
+		return strings.ReplaceAll(ii.TemplateID, "_", " ")
+	}
 	return "Unknown Item"
+}
+
+// DisplayLabel exposes a stable instance identifier for otherwise identical items.
+func (ii *ItemInstance) DisplayLabel() string {
+	name := ii.GetDisplayName()
+	if ii.Quantity > 1 {
+		name = fmt.Sprintf("%s x%d", name, ii.Quantity)
+	}
+	if ii.ID != "" {
+		name += " [" + ii.ID + "]"
+	}
+	return name
 }
 
 func (ii *ItemInstance) IsBroken() bool {
@@ -113,8 +142,8 @@ func (ii *ItemInstance) UpdateLastUsed() {
 
 func (ii *ItemInstance) CanStack(other *ItemInstance) bool {
 	return ii.TemplateID == other.TemplateID &&
-		   len(ii.Enchantments) == 0 &&
-		   len(other.Enchantments) == 0 &&
-		   ii.Durability == other.Durability &&
-		   ii.CustomName == other.CustomName
+		len(ii.Enchantments) == 0 &&
+		len(other.Enchantments) == 0 &&
+		ii.Durability == other.Durability &&
+		ii.CustomName == other.CustomName
 }

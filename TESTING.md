@@ -261,3 +261,25 @@ cover exact-case disambiguation and delayed success confirmation.
 ```bash
 DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/server ./pkg/integration ./pkg/commands ./pkg/game/actions
 ```
+
+## Item ownership and starter seeds
+
+The real migration sequence now includes `004_item_ownership.sql` and
+`005_starter_items.sql`. PostgreSQL tests cover valid versioned and unversioned
+upgrades, preservation of legacy fields and nullable names/timestamps, atomic
+failure for missing or ambiguous owners, foreign-key rejection of invalid owners,
+and distinct room/character queries even when IDs overlap.
+
+Seed tests move one starter item and delete another, reopen repository connections,
+and repeat startup to prove no ownership reset, duplicate seeding, or automatic
+respawn. TCP tests restart the repository and game handler, then verify room items,
+inventory names and IDs, room isolation, and honest errors on unavailable storage.
+Existing test fixtures now create real owners rather than placeholder strings.
+
+```bash
+./verify-db.sh
+DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 -timeout=120s ./...
+```
+
+Item movement in these tests uses repository operations. Gameplay pickup and drop
+behavior, including competing actions, belongs to issue #10.

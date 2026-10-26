@@ -101,5 +101,14 @@ func (s *World) describe(room *world.Room, actorID string) []string {
 	if len(occupants) > 0 {
 		lines = append(lines, "Also here: "+strings.Join(occupants, ", ")+".")
 	}
+	roomItems, err := s.repositories.Items().GetRoomItems(room.ID)
+	if err != nil {
+		lines = append(lines, "Room contents are unavailable.")
+	} else if len(roomItems) > 0 {
+		lines = append(lines, "Items here:")
+		for _, item := range roomItems {
+			lines = append(lines, "  "+item.DisplayLabel())
+		}
+	}
 	return lines
 }

@@ -56,7 +56,7 @@ func createTestItemInstance() *items.ItemInstance {
 	return &items.ItemInstance{
 		ID:            uuid.New().String(),
 		TemplateID:    "test_template",
-		OwnerID:       "test_owner",
+		OwnerID:       "newbie_west",
 		Quantity:      1,
 		Durability:    100,
 		Enchantments:  []items.Enchantment{},
@@ -70,4 +70,20 @@ var testCounter int
 func generateUUID() string {
 	testCounter++
 	return uuid.New().String()
+}
+
+func existingItemCharacter(t *testing.T, manager *PostgreSQLRepositoryManager) string {
+	t.Helper()
+	p := createTestPlayer()
+	p.Username = "owner_" + uuid.NewString()[:8]
+	p.Email = p.Username + "@example.com"
+	if err := manager.Players().CreatePlayer(p); err != nil {
+		t.Fatal(err)
+	}
+	c := createTestCharacter(p.ID)
+	c.Name = "Owner" + uuid.NewString()[:8]
+	if err := manager.Characters().CreateCharacter(c); err != nil {
+		t.Fatal(err)
+	}
+	return c.ID
 }

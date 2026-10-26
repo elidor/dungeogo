@@ -104,7 +104,7 @@ func TestItemRepository_GetPlayerItems(t *testing.T) {
 	}
 
 	repo := repoManager.Items()
-	playerID := "test-player-" + generateUUID()
+	playerID := existingItemCharacter(t, repoManager)
 
 	// Create multiple items for the player
 	item1 := createTestItemInstance()
@@ -117,7 +117,7 @@ func TestItemRepository_GetPlayerItems(t *testing.T) {
 	item2.Quantity = 5
 
 	item3 := createTestItemInstance()
-	item3.OwnerID = "different-player"
+	item3.OwnerID = "newbie_west"
 	item3.TemplateID = "armor"
 
 	// Create all items
@@ -171,8 +171,8 @@ func TestItemRepository_TransferItem(t *testing.T) {
 	}
 
 	repo := repoManager.Items()
-	originalOwner := "player-1-" + generateUUID()
-	newOwner := "player-2-" + generateUUID()
+	originalOwner := existingItemCharacter(t, repoManager)
+	newOwner := existingItemCharacter(t, repoManager)
 
 	// Create item for original owner
 	testItem := createTestItemInstance()
@@ -327,7 +327,7 @@ func TestItemRepository_GetRoomItems(t *testing.T) {
 	}
 
 	repo := repoManager.Items()
-	roomID := "tavern_main_room"
+	roomID := "newbie_east"
 
 	// Create items in room
 	item1 := createTestItemInstance()
@@ -365,4 +365,3 @@ func TestItemRepository_GetRoomItems(t *testing.T) {
 		}
 	}
 }
-

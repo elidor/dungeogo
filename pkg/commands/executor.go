@@ -294,7 +294,7 @@ func (h *InventoryHandler) Execute(cmd *Command) ([]string, error) {
 
 	response := []string{"You are carrying:"}
 	for _, item := range items {
-		response = append(response, fmt.Sprintf("  %s", item.GetDisplayName()))
+		response = append(response, fmt.Sprintf("  %s", item.DisplayLabel()))
 	}
 
 	return response, nil
