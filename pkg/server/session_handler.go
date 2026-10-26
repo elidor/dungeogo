@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -431,16 +432,8 @@ func (sh *SessionHandler) handleCharacterSelectByNumber(client *Client, input st
 	}
 
 	selected := characters[index-1]
-	spawn, err := sh.repoManager.World().LoadRoomDefinition(sh.startingRoom)
-	if err != nil {
-		client.Send("Error loading the starting room.")
-		client.SetState(StateCharacterSelection)
-		sh.showCharacterMenu(client)
-		return
-	}
-	spawnLocation := &character.Location{RoomID: spawn.ID, ZoneID: spawn.ZoneID}
-	if err := sh.repoManager.Characters().UpdateCharacterLocation(selected.ID, spawnLocation); err != nil {
-		client.Send("Error placing character in the starting room.")
+	if err := sh.restoreCharacterLocation(selected.ID); err != nil {
+		client.Send("Error restoring character location. Please try again.")
 		client.SetState(StateCharacterSelection)
 		sh.showCharacterMenu(client)
 		return
@@ -464,6 +457,37 @@ func (sh *SessionHandler) handleCharacterSelectByNumber(client *Client, input st
 	}
 
 	client.SendPrompt("> ")
+}
+
+// restoreCharacterLocation leaves valid persisted locations untouched. Only an
+// absent room or invalid room/zone pair permits recovery; storage errors fail entry.
+func (sh *SessionHandler) restoreCharacterLocation(characterID string) error {
+	saved, err := sh.repoManager.Characters().GetCharacter(characterID)
+	if err != nil {
+		return err
+	}
+	if saved.Location != nil && saved.Location.RoomID != "" {
+		room, err := sh.repoManager.World().LoadRoomDefinition(saved.Location.RoomID)
+		if err != nil && !errors.Is(err, interfaces.ErrRoomNotFound) {
+			return err
+		}
+		if err == nil && saved.Location.ZoneID == room.ZoneID {
+			return nil
+		}
+	}
+	spawn, err := sh.startingLocation()
+	if err != nil {
+		return err
+	}
+	return sh.repoManager.Characters().UpdateCharacterLocation(characterID, spawn)
+}
+
+func (sh *SessionHandler) startingLocation() (*character.Location, error) {
+	room, err := sh.repoManager.World().LoadRoomDefinition(sh.startingRoom)
+	if err != nil {
+		return nil, err
+	}
+	return &character.Location{RoomID: room.ID, ZoneID: room.ZoneID}, nil
 }
 
 func (sh *SessionHandler) createCharacter(client *Client, name, raceStr, classStr string) {
@@ -491,6 +515,11 @@ func (sh *SessionHandler) createCharacter(client *Client, name, raceStr, classSt
 
 	// Create character
 	newChar := character.NewCharacter(client.GetPlayerID(), name, race, class)
+	newChar.Location, err = sh.startingLocation()
+	if err != nil {
+		client.Send("Error loading the starting room.")
+		return
+	}
 	err = sh.repoManager.Characters().CreateCharacter(newChar)
 	if err != nil {
 		client.Send("Error creating character. Name might already be taken.")
