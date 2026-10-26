@@ -114,14 +114,22 @@ func TestExecuteCommunicationCommand(t *testing.T) {
 		t.Skip("No database available for testing")
 	}
 
+	p := testutil.CreateTestPlayer()
+	if err := repoManager.Players().CreatePlayer(p); err != nil {
+		t.Fatal(err)
+	}
+	c := testutil.CreateTestCharacter(p.ID)
+	if err := repoManager.Characters().CreateCharacter(c); err != nil {
+		t.Fatal(err)
+	}
 	executor := NewExecutor(repoManager)
 
 	cmd := &Command{
 		Type:        CommandCommunication,
 		Verb:        "say",
 		Args:        []string{"hello", "world"},
-		PlayerID:    "player1",
-		CharacterID: "char1",
+		PlayerID:    p.ID,
+		CharacterID: c.ID,
 	}
 
 	responses, err := executor.Execute(cmd)
@@ -370,14 +378,22 @@ func TestExecuteEmoteCommand(t *testing.T) {
 		t.Skip("No database available for testing")
 	}
 
+	p := testutil.CreateTestPlayer()
+	if err := repoManager.Players().CreatePlayer(p); err != nil {
+		t.Fatal(err)
+	}
+	c := testutil.CreateTestCharacter(p.ID)
+	if err := repoManager.Characters().CreateCharacter(c); err != nil {
+		t.Fatal(err)
+	}
 	executor := NewExecutor(repoManager)
 
 	cmd := &Command{
 		Type:        CommandSocial,
 		Verb:        "emote",
 		Args:        []string{"dances", "around", "happily"},
-		PlayerID:    "player1",
-		CharacterID: "char1",
+		PlayerID:    p.ID,
+		CharacterID: c.ID,
 	}
 
 	responses, err := executor.Execute(cmd)
