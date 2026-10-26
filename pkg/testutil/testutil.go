@@ -1,9 +1,6 @@
 package testutil
 
 import (
-	"database/sql"
-	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -20,141 +17,10 @@ func GenerateUUID() string {
 	return uuid.New().String()
 }
 
-const (
-	TestDatabaseURL = "postgres://localhost/dungeogo_test?sslmode=disable"
-)
-
-// SetupTestDB creates a test database and runs migrations
+// SetupTestDB uses an isolated database with the production migrations.
 func SetupTestDB(t *testing.T) *postgres.PostgreSQLRepositoryManager {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = TestDatabaseURL
-	}
-
-	// Try to connect to postgres to check if it's available
-	db, err := sql.Open("postgres", "postgres://localhost/postgres?sslmode=disable")
-	if err != nil {
-		t.Skipf("Skipping database tests - cannot connect to postgres: %v", err)
-		return nil
-	}
-
-	// Test the connection
-	if err := db.Ping(); err != nil {
-		db.Close()
-		t.Skipf("Skipping database tests - postgres not available: %v", err)
-		return nil
-	}
-
-	testDBName := fmt.Sprintf("dungeogo_test_%d_%d", time.Now().Unix(), os.Getpid())
-	_, err = db.Exec(fmt.Sprintf("CREATE DATABASE %s", testDBName))
-	if err != nil {
-		db.Close()
-		t.Skipf("Skipping database tests - cannot create test database: %v", err)
-		return nil
-	}
-	db.Close()
-
-	// Connect to test database
-	testDBURL := fmt.Sprintf("postgres://localhost/%s?sslmode=disable", testDBName)
-	repoManager, err := postgres.NewPostgreSQLRepositoryManager(testDBURL)
-	if err != nil {
-		// Clean up the database if we can't connect to it
-		db, _ := sql.Open("postgres", "postgres://localhost/postgres?sslmode=disable")
-		if db != nil {
-			db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", testDBName))
-			db.Close()
-		}
-		t.Fatalf("Failed to connect to test database: %v", err)
-	}
-
-	// Run migrations (simplified schema for testing)
-	err = createTestSchema(repoManager)
-	if err != nil {
-		repoManager.Close()
-		t.Fatalf("Failed to create test schema: %v", err)
-	}
-
-	// Cleanup function
-	t.Cleanup(func() {
-		repoManager.Close()
-		// Clean up test database
-		db, err := sql.Open("postgres", "postgres://localhost/postgres?sslmode=disable")
-		if err == nil {
-			db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", testDBName))
-			db.Close()
-		}
-	})
-
-	return repoManager
-}
-
-func createTestSchema(repoManager *postgres.PostgreSQLRepositoryManager) error {
-	// This is a simplified version of the full schema for testing
-	schema := `
-	CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-	
-	CREATE TABLE players (
-		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		username VARCHAR(50) UNIQUE NOT NULL,
-		email VARCHAR(255) UNIQUE NOT NULL,
-		password_hash VARCHAR(255) NOT NULL,
-		created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-		last_login TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-		account_status INTEGER DEFAULT 0,
-		subscription JSONB,
-		preferences JSONB NOT NULL DEFAULT '{}',
-		max_characters INTEGER DEFAULT 5,
-		current_character_id UUID
-	);
-
-	CREATE TABLE characters (
-		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-		name VARCHAR(50) UNIQUE NOT NULL,
-		race_id VARCHAR(50) NOT NULL,
-		class_id VARCHAR(50) NOT NULL,
-		stats JSONB NOT NULL DEFAULT '{}',
-		skills JSONB NOT NULL DEFAULT '{}',
-		location JSONB NOT NULL DEFAULT '{}',
-		state INTEGER DEFAULT 0,
-		created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-		last_played TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-		play_time INTERVAL DEFAULT '0 seconds',
-		level INTEGER DEFAULT 1,
-		experience INTEGER DEFAULT 0,
-		death_count INTEGER DEFAULT 0,
-		kill_count INTEGER DEFAULT 0,
-		description TEXT DEFAULT '',
-		appearance JSONB NOT NULL DEFAULT '{}'
-	);
-
-	CREATE TABLE item_instances (
-		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		template_id VARCHAR(100) NOT NULL,
-		owner_id VARCHAR(100) NOT NULL,
-		quantity INTEGER DEFAULT 1,
-		durability INTEGER DEFAULT 100,
-		enchantments JSONB NOT NULL DEFAULT '[]',
-		custom_name VARCHAR(255),
-		modifications JSONB NOT NULL DEFAULT '{}',
-		created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-		last_used TIMESTAMP WITH TIME ZONE
-	);
-	`
-
-	// Get the underlying *sql.DB from the repository manager
-	// This is a simplified approach - in real implementation you'd add a method to get the DB
-	db := getDBFromRepoManager(repoManager)
-	_, err := db.Exec(schema)
-	return err
-}
-
-// This is a hack to get the *sql.DB - in real implementation, add a proper method
-func getDBFromRepoManager(repoManager *postgres.PostgreSQLRepositoryManager) *sql.DB {
-	// This would need to be implemented properly in the postgres package
-	// For now, we'll create a new connection
-	db, _ := sql.Open("postgres", TestDatabaseURL)
-	return db
+	t.Helper()
+	return ImprovedSetupTestDB(t)
 }
 
 // CreateTestPlayer creates a test player for use in tests

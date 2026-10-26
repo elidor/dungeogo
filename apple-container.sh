@@ -95,7 +95,6 @@ up() {
         --network "$NETWORK_NAME" \
         --publish "127.0.0.1:${POSTGRES_PORT}:5432" \
         --volume "${POSTGRES_VOLUME}:/var/lib/postgresql/data" \
-        --volume "${SCRIPT_DIR}/migrations:/docker-entrypoint-initdb.d:ro" \
         --env POSTGRES_DB=dungeogo \
         --env POSTGRES_USER=dungeogo_user \
         --env POSTGRES_PASSWORD=dungeogo_password \

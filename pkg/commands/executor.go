@@ -2,8 +2,9 @@ package commands
 
 import (
 	"fmt"
+	"sort"
 	"strings"
-	
+
 	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 )
 
@@ -26,7 +27,7 @@ func NewExecutor(repoManager interfaces.RepositoryManager) *Executor {
 		repoManager: repoManager,
 		handlers:    make(map[string]CommandHandler),
 	}
-	
+
 	e.initializeHandlers()
 	return e
 }
@@ -35,39 +36,39 @@ func (e *Executor) Execute(cmd *Command) ([]string, error) {
 	if cmd.Type == CommandUnknown {
 		return []string{fmt.Sprintf("Unknown command: %s", cmd.Verb)}, nil
 	}
-	
+
 	if !cmd.ValidateArgs() {
 		return []string{"Invalid command syntax. Type 'help' for usage information."}, nil
 	}
-	
+
 	handler, exists := e.handlers[cmd.Verb]
 	if !exists {
 		return []string{fmt.Sprintf("Command '%s' is not implemented yet.", cmd.Verb)}, nil
 	}
-	
+
 	return handler.Execute(cmd)
 }
 
 func (e *Executor) initializeHandlers() {
 	// Movement handlers
-	e.handlers["north"] = &MovementHandler{direction: "north"}
-	e.handlers["south"] = &MovementHandler{direction: "south"}
-	e.handlers["east"] = &MovementHandler{direction: "east"}
-	e.handlers["west"] = &MovementHandler{direction: "west"}
-	e.handlers["up"] = &MovementHandler{direction: "up"}
-	e.handlers["down"] = &MovementHandler{direction: "down"}
-	e.handlers["northeast"] = &MovementHandler{direction: "northeast"}
-	e.handlers["northwest"] = &MovementHandler{direction: "northwest"}
-	e.handlers["southeast"] = &MovementHandler{direction: "southeast"}
-	e.handlers["southwest"] = &MovementHandler{direction: "southwest"}
-	
+	e.handlers["north"] = &MovementHandler{direction: "north", repoManager: e.repoManager}
+	e.handlers["south"] = &MovementHandler{direction: "south", repoManager: e.repoManager}
+	e.handlers["east"] = &MovementHandler{direction: "east", repoManager: e.repoManager}
+	e.handlers["west"] = &MovementHandler{direction: "west", repoManager: e.repoManager}
+	e.handlers["up"] = &MovementHandler{direction: "up", repoManager: e.repoManager}
+	e.handlers["down"] = &MovementHandler{direction: "down", repoManager: e.repoManager}
+	e.handlers["northeast"] = &MovementHandler{direction: "northeast", repoManager: e.repoManager}
+	e.handlers["northwest"] = &MovementHandler{direction: "northwest", repoManager: e.repoManager}
+	e.handlers["southeast"] = &MovementHandler{direction: "southeast", repoManager: e.repoManager}
+	e.handlers["southwest"] = &MovementHandler{direction: "southwest", repoManager: e.repoManager}
+
 	// Communication handlers
 	e.handlers["say"] = &SayHandler{}
 	e.handlers["tell"] = &TellHandler{repoManager: e.repoManager}
 	e.handlers["yell"] = &YellHandler{}
 	e.handlers["whisper"] = &WhisperHandler{}
 	e.handlers["chat"] = &ChatHandler{}
-	
+
 	// Information handlers
 	e.handlers["look"] = &LookHandler{repoManager: e.repoManager}
 	e.handlers["examine"] = &ExamineHandler{repoManager: e.repoManager}
@@ -75,7 +76,7 @@ func (e *Executor) initializeHandlers() {
 	e.handlers["score"] = &ScoreHandler{repoManager: e.repoManager}
 	e.handlers["time"] = &TimeHandler{}
 	e.handlers["weather"] = &WeatherHandler{}
-	
+
 	// Inventory handlers
 	e.handlers["inventory"] = &InventoryHandler{repoManager: e.repoManager}
 	e.handlers["get"] = &GetHandler{repoManager: e.repoManager}
@@ -83,23 +84,23 @@ func (e *Executor) initializeHandlers() {
 	e.handlers["give"] = &GiveHandler{repoManager: e.repoManager}
 	e.handlers["wear"] = &WearHandler{repoManager: e.repoManager}
 	e.handlers["remove"] = &RemoveHandler{repoManager: e.repoManager}
-	
+
 	// Skill handlers
 	e.handlers["skills"] = &SkillsHandler{repoManager: e.repoManager}
 	e.handlers["practice"] = &PracticeHandler{repoManager: e.repoManager}
-	
+
 	// System handlers
 	e.handlers["help"] = &HelpHandler{}
 	e.handlers["commands"] = &CommandsHandler{}
 	e.handlers["quit"] = &QuitHandler{}
 	e.handlers["save"] = &SaveHandler{repoManager: e.repoManager}
-	
+
 	// Social handlers
 	e.handlers["emote"] = &EmoteHandler{}
 	e.handlers["smile"] = &SocialHandler{action: "smile"}
 	e.handlers["wave"] = &SocialHandler{action: "wave"}
 	e.handlers["bow"] = &SocialHandler{action: "bow"}
-	
+
 	// Combat handlers (basic implementations)
 	e.handlers["kill"] = &KillHandler{repoManager: e.repoManager}
 	e.handlers["flee"] = &FleeHandler{}
@@ -109,11 +110,38 @@ func (e *Executor) initializeHandlers() {
 // Basic handler implementations
 
 type MovementHandler struct {
-	direction string
+	direction   string
+	repoManager interfaces.RepositoryManager
 }
 
 func (h *MovementHandler) Execute(cmd *Command) ([]string, error) {
-	return []string{fmt.Sprintf("You attempt to move %s.", h.direction)}, nil
+	char, err := h.repoManager.Characters().GetCharacter(cmd.CharacterID)
+	if err != nil || char.Location == nil {
+		return []string{"You cannot move right now."}, nil
+	}
+
+	room, err := h.repoManager.World().LoadRoomDefinition(char.Location.RoomID)
+	if err != nil {
+		return []string{"You cannot determine which way to go."}, nil
+	}
+
+	destinationID, exists := room.Exits[h.direction]
+	if !exists {
+		return []string{fmt.Sprintf("You cannot go %s from here.", h.direction)}, nil
+	}
+
+	destination, err := h.repoManager.World().LoadRoomDefinition(destinationID)
+	if err != nil {
+		return []string{fmt.Sprintf("The way %s is blocked.", h.direction)}, nil
+	}
+
+	char.Location.RoomID = destination.ID
+	char.Location.ZoneID = destination.ZoneID
+	if err := h.repoManager.Characters().UpdateCharacterLocation(char.ID, char.Location); err != nil {
+		return []string{"You cannot move right now."}, nil
+	}
+
+	return append([]string{fmt.Sprintf("You move %s.", h.direction)}, roomDescriptionResponses(destination)...), nil
 }
 
 type SayHandler struct{}
@@ -131,10 +159,10 @@ func (h *TellHandler) Execute(cmd *Command) ([]string, error) {
 	if len(cmd.Args) < 2 {
 		return []string{"Usage: tell <player> <message>"}, nil
 	}
-	
+
 	target := cmd.Args[0]
 	message := strings.Join(cmd.Args[1:], " ")
-	
+
 	return []string{fmt.Sprintf("You tell %s: %s", target, message)}, nil
 }
 
@@ -151,10 +179,10 @@ func (h *WhisperHandler) Execute(cmd *Command) ([]string, error) {
 	if len(cmd.Args) < 2 {
 		return []string{"Usage: whisper <player> <message>"}, nil
 	}
-	
+
 	target := cmd.Args[0]
 	message := strings.Join(cmd.Args[1:], " ")
-	
+
 	return []string{fmt.Sprintf("You whisper to %s: %s", target, message)}, nil
 }
 
@@ -171,16 +199,34 @@ type LookHandler struct {
 
 func (h *LookHandler) Execute(cmd *Command) ([]string, error) {
 	if len(cmd.Args) == 0 {
-		// Look at room
-		return []string{
-			"A Simple Room",
-			"You are in a basic room with stone walls and a dirt floor.",
-			"There are exits to the north, south, east, and west.",
-		}, nil
+		char, err := h.repoManager.Characters().GetCharacter(cmd.CharacterID)
+		if err == nil && char.Location != nil {
+			room, err := h.repoManager.World().LoadRoomDefinition(char.Location.RoomID)
+			if err == nil {
+				return roomDescriptionResponses(room), nil
+			}
+		}
+
+		return []string{"You are in an undefined room."}, nil
 	}
-	
+
 	target := strings.Join(cmd.Args, " ")
 	return []string{fmt.Sprintf("You look at %s.", target)}, nil
+}
+
+func roomDescriptionResponses(room *interfaces.RoomDefinition) []string {
+	directions := make([]string, 0, len(room.Exits))
+	for direction := range room.Exits {
+		directions = append(directions, direction)
+	}
+	sort.Strings(directions)
+
+	responses := []string{room.Name, room.Description}
+	if len(directions) == 0 {
+		return append(responses, "There are no obvious exits.")
+	}
+
+	return append(responses, fmt.Sprintf("Exits: %s.", strings.Join(directions, ", ")))
 }
 
 type ExamineHandler struct {
@@ -213,7 +259,7 @@ func (h *ScoreHandler) Execute(cmd *Command) ([]string, error) {
 	if err != nil {
 		return []string{"Error retrieving character information."}, nil
 	}
-	
+
 	return []string{
 		fmt.Sprintf("Name: %s", char.Name),
 		fmt.Sprintf("Race: %s, Class: %s", char.Race.Name, char.Class.Name),
@@ -246,16 +292,16 @@ func (h *InventoryHandler) Execute(cmd *Command) ([]string, error) {
 	if err != nil {
 		return []string{"Error retrieving inventory."}, nil
 	}
-	
+
 	if len(items) == 0 {
 		return []string{"You are carrying nothing."}, nil
 	}
-	
+
 	response := []string{"You are carrying:"}
 	for _, item := range items {
 		response = append(response, fmt.Sprintf("  %s", item.GetDisplayName()))
 	}
-	
+
 	return response, nil
 }
 
@@ -315,11 +361,11 @@ func (h *SkillsHandler) Execute(cmd *Command) ([]string, error) {
 	if err != nil {
 		return []string{"Error retrieving character skills."}, nil
 	}
-	
+
 	response := []string{"Your skills:"}
 	// This would iterate through actual skills
 	response = append(response, "  Swords: 15", "  Magic: 8", "  Stealth: 12")
-	
+
 	return response, nil
 }
 
@@ -349,7 +395,7 @@ func (h *HelpHandler) Execute(cmd *Command) ([]string, error) {
 			"Type 'commands' to list all available commands.",
 		}, nil
 	}
-	
+
 	topic := strings.ToLower(cmd.Args[0])
 	switch topic {
 	case "movement":
@@ -404,13 +450,13 @@ func (h *SaveHandler) Execute(cmd *Command) ([]string, error) {
 	if err != nil {
 		return []string{"Error saving character."}, nil
 	}
-	
+
 	char.UpdatePlayTime()
 	err = h.repoManager.Characters().UpdateCharacter(char)
 	if err != nil {
 		return []string{"Error saving character."}, nil
 	}
-	
+
 	return []string{"Character saved."}, nil
 }
 
@@ -429,7 +475,7 @@ func (h *SocialHandler) Execute(cmd *Command) ([]string, error) {
 	if len(cmd.Args) == 0 {
 		return []string{fmt.Sprintf("You %s.", h.action)}, nil
 	}
-	
+
 	target := strings.Join(cmd.Args, " ")
 	return []string{fmt.Sprintf("You %s at %s.", h.action, target)}, nil
 }

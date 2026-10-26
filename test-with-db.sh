@@ -169,15 +169,16 @@ run_tests() {
     print_status "Running tests with database..."
 
     # Set environment variable to indicate database is available
+    export DUNGEOGO_REQUIRE_DB=1
     export POSTGRES_TEST_URL="postgres://testuser:testpass@localhost:$POSTGRES_PORT/postgres?sslmode=disable"
 
     # Run the tests
     if [ "$#" -eq 0 ]; then
         # No specific package specified, run all tests
-        go test -v ./...
+        go test -count=1 -v ./...
     else
         # Run tests for specific packages
-        go test -v "$@"
+        go test -count=1 -v "$@"
     fi
 
     local exit_code=$?
@@ -195,13 +196,14 @@ run_tests() {
 run_tests_with_coverage() {
     print_status "Running tests with coverage analysis..."
 
+    export DUNGEOGO_REQUIRE_DB=1
     export POSTGRES_TEST_URL="postgres://testuser:testpass@localhost:$POSTGRES_PORT/postgres?sslmode=disable"
 
     # Create coverage directory if it doesn't exist
     mkdir -p coverage
 
     # Run tests with coverage
-    go test -v -coverprofile=coverage/coverage.out ./...
+    go test -count=1 -v -coverprofile=coverage/coverage.out ./...
     local exit_code=$?
 
     if [ $exit_code -eq 0 ]; then
