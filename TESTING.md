@@ -234,3 +234,16 @@ DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/server ./pkg/integration ./pk
 World actions return addressed results in `pkg/game/world`. Legacy command APIs
 still return actor-only text; the TCP handler resolves room effects through live
 presence and owns socket delivery.
+
+## Room-local conversation
+
+`TestLocalCommunication` places two TCP characters together and a third in a
+different room. It verifies say/emote sender feedback, recipient identity and
+content (including Unicode), aliases, no duplicate or cross-room delivery,
+movement, disconnect, and reconnect. Failure cases cover empty messages, missing
+or invalid persisted locations, inconsistent live membership, and unavailable
+room storage; none may fabricate a broadcast.
+
+```bash
+DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/integration -run TestLocalCommunication
+```

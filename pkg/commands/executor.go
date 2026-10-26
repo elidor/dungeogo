@@ -49,6 +49,12 @@ func (e *Executor) ExecuteAction(cmd *Command) (world.Result, error) {
 		if cmd.Type == CommandMovement {
 			return e.worldActions.Move(cmd.CharacterID, cmd.Verb), nil
 		}
+		if cmd.Verb == "say" {
+			return e.worldActions.Say(cmd.CharacterID, strings.Join(cmd.Args, " ")), nil
+		}
+		if cmd.Verb == "emote" {
+			return e.worldActions.Emote(cmd.CharacterID, strings.Join(cmd.Args, " ")), nil
+		}
 		if cmd.Verb == "look" && len(cmd.Args) == 0 {
 			return e.worldActions.Look(cmd.CharacterID), nil
 		}
@@ -93,7 +99,7 @@ func (e *Executor) initializeHandlers() {
 	e.handlers["southwest"] = &MovementHandler{direction: "southwest", repoManager: e.repoManager}
 
 	// Communication handlers
-	e.handlers["say"] = &SayHandler{}
+	e.handlers["say"] = &SayHandler{repoManager: e.repoManager}
 	e.handlers["tell"] = &TellHandler{repoManager: e.repoManager}
 	e.handlers["yell"] = &YellHandler{}
 	e.handlers["whisper"] = &WhisperHandler{}
@@ -126,7 +132,7 @@ func (e *Executor) initializeHandlers() {
 	e.handlers["save"] = &SaveHandler{repoManager: e.repoManager}
 
 	// Social handlers
-	e.handlers["emote"] = &EmoteHandler{}
+	e.handlers["emote"] = &EmoteHandler{repoManager: e.repoManager}
 	e.handlers["smile"] = &SocialHandler{action: "smile"}
 	e.handlers["wave"] = &SocialHandler{action: "wave"}
 	e.handlers["bow"] = &SocialHandler{action: "bow"}
@@ -148,11 +154,10 @@ func (h *MovementHandler) Execute(cmd *Command) ([]string, error) {
 	return actions.NewWorld(h.repoManager).Move(cmd.CharacterID, h.direction).Replies(cmd.CharacterID), nil
 }
 
-type SayHandler struct{}
+type SayHandler struct{ repoManager interfaces.RepositoryManager }
 
 func (h *SayHandler) Execute(cmd *Command) ([]string, error) {
-	message := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You say: %s", message)}, nil
+	return actions.NewWorld(h.repoManager).Say(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
 }
 
 type TellHandler struct {
@@ -448,11 +453,10 @@ func (h *SaveHandler) Execute(cmd *Command) ([]string, error) {
 	return []string{"Character saved."}, nil
 }
 
-type EmoteHandler struct{}
+type EmoteHandler struct{ repoManager interfaces.RepositoryManager }
 
 func (h *EmoteHandler) Execute(cmd *Command) ([]string, error) {
-	emote := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You %s", emote)}, nil
+	return actions.NewWorld(h.repoManager).Emote(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
 }
 
 type SocialHandler struct {

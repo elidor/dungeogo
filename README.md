@@ -278,3 +278,9 @@ room and zone before updating live membership, then announces departure to the
 old room and arrival to the destination. Unrelated rooms receive neither event.
 Blocked exits and failed database writes leave both locations unchanged. Socket
 delivery failures do not undo committed movement; reconnect restores its destination.
+
+`say <message>` and `emote <action>` deliver to other selected live characters in
+your current room, with feedback to the sender. Recipients see the sender's
+character name and message; other rooms receive nothing. Moving, disconnecting,
+and reconnecting change subsequent delivery through live room membership. Empty
+messages and invalid or unavailable locations report failure without broadcasting.
