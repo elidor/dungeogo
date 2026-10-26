@@ -3,17 +3,17 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
-	
+
 	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 	_ "github.com/lib/pq"
 )
 
 type PostgreSQLRepositoryManager struct {
-	db               *sql.DB
-	playerRepo       *PlayerRepository
-	characterRepo    *CharacterRepository
-	itemRepo         *ItemRepository
-	worldRepo        *WorldRepository
+	db            *sql.DB
+	playerRepo    *PlayerRepository
+	characterRepo *CharacterRepository
+	itemRepo      *ItemRepository
+	worldRepo     *WorldRepository
 }
 
 func NewPostgreSQLRepositoryManager(databaseURL string) (*PostgreSQLRepositoryManager, error) {
@@ -21,20 +21,21 @@ func NewPostgreSQLRepositoryManager(databaseURL string) (*PostgreSQLRepositoryMa
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
-	
+
 	if err := db.Ping(); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-	
+
 	manager := &PostgreSQLRepositoryManager{
 		db: db,
 	}
-	
+
 	manager.playerRepo = NewPlayerRepository(db)
 	manager.characterRepo = NewCharacterRepository(db)
 	manager.itemRepo = NewItemRepository(db)
 	manager.worldRepo = NewWorldRepository(db)
-	
+
 	return manager, nil
 }
 

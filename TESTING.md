@@ -172,3 +172,25 @@ Example CI usage:
 - name: Run tests with database
   run: ./test-with-db.sh -c
 ```
+## Required PostgreSQL verification
+
+Run against an existing PostgreSQL server whose test role has `CREATEDB`:
+
+```bash
+TEST_DATABASE_URL='postgres://testuser:testpass@localhost:5433/postgres?sslmode=disable' ./verify-db.sh
+```
+
+This command disables test caching and sets `DUNGEOGO_REQUIRE_DB=1`. An unavailable
+server, inability to create a database, migration failure, or test failure returns
+nonzero. `POSTGRES_TEST_URL` is also accepted for the existing container scripts;
+`TEST_DATABASE_URL` takes precedence. Each test creates a distinct disposable
+database and runs the embedded production SQL migrations, then drops that database.
+The URL's database is used only for administration; its tables are never reset.
+Ordinary `go test ./...` may skip database tests when PostgreSQL is unavailable.
+`./test-with-db.sh` provisions PostgreSQL and also requires database tests to run.
+
+Migration coverage includes a fresh database, unversioned upgrades from migrations
+001 and 002 with existing player/character/item/room state, incompatible schema
+rejection, repeat startup without reseeding, missing spawn, and broken exits.
+Movement tests use the migrated starter grid and check persisted locations,
+blocked exits, and failed database writes.

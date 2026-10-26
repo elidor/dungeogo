@@ -1,9 +1,7 @@
 package postgres
 
 import (
-	"database/sql"
-	"fmt"
-	"strings"
+	"github.com/elidor/dungeogo/internal/testdb"
 	"testing"
 	"time"
 
@@ -14,175 +12,15 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// setupTestDB creates a test database with schema for testing
 func setupTestDB(t *testing.T) *PostgreSQLRepositoryManager {
-	// Generate unique database name
-	testDBName := fmt.Sprintf("dungeogo_test_%d", time.Now().UnixNano())
-
-	// Try containerized postgres first (port 5433), then local postgres (port 5432)
-	adminConnStrings := []string{
-		"postgres://testuser:testpass@localhost:5433/postgres?sslmode=disable", // Docker container
-		"postgres://localhost/postgres?sslmode=disable",                        // Local postgres
-	}
-
-	var adminDB *sql.DB
-	var err error
-	var connStr string
-
-	for _, cs := range adminConnStrings {
-		adminDB, err = sql.Open("postgres", cs)
-		if err != nil {
-			continue
-		}
-		if err = adminDB.Ping(); err != nil {
-			adminDB.Close()
-			continue
-		}
-		connStr = cs
-		break
-	}
-
-	if adminDB == nil {
-		t.Skipf("Skipping database tests - postgres not available (tried containerized and local)")
-		return nil
-	}
-
-	// Create test database
-	_, err = adminDB.Exec(fmt.Sprintf("CREATE DATABASE %s", testDBName))
+	t.Helper()
+	_, databaseURL := testdb.New(t, true)
+	manager, err := NewPostgreSQLRepositoryManager(databaseURL)
 	if err != nil {
-		adminDB.Close()
-		t.Skipf("Skipping database tests - cannot create database: %v", err)
-		return nil
+		t.Fatal(err)
 	}
-	adminDB.Close()
-
-	// Connect to test database using the same connection parameters
-	var testDBURL string
-	if strings.Contains(connStr, ":5433") {
-		// Docker container
-		testDBURL = fmt.Sprintf("postgres://testuser:testpass@localhost:5433/%s?sslmode=disable", testDBName)
-	} else {
-		// Local postgres
-		testDBURL = fmt.Sprintf("postgres://localhost/%s?sslmode=disable", testDBName)
-	}
-	repoManager, err := NewPostgreSQLRepositoryManager(testDBURL)
-	if err != nil {
-		t.Fatalf("Failed to create repository manager: %v", err)
-	}
-
-	// Create schema
-	err = createTestSchema(repoManager)
-	if err != nil {
-		repoManager.Close()
-		t.Fatalf("Failed to create test schema: %v", err)
-	}
-
-	// Cleanup on test completion
-	t.Cleanup(func() {
-		repoManager.Close()
-		cleanupTestDatabase(testDBName)
-	})
-
-	return repoManager
-}
-
-func createTestSchema(repoManager *PostgreSQLRepositoryManager) error {
-	schema := `
-	CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-	
-	CREATE TABLE players (
-		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		username VARCHAR(50) UNIQUE NOT NULL,
-		email VARCHAR(255) UNIQUE NOT NULL,
-		password_hash VARCHAR(255) NOT NULL,
-		created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-		last_login TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-		account_status INTEGER DEFAULT 0,
-		subscription JSONB,
-		preferences JSONB NOT NULL DEFAULT '{}',
-		max_characters INTEGER DEFAULT 5,
-		current_character_id UUID
-	);
-
-	CREATE TABLE characters (
-		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-		name VARCHAR(50) UNIQUE NOT NULL,
-		race_id VARCHAR(50) NOT NULL,
-		class_id VARCHAR(50) NOT NULL,
-		stats JSONB NOT NULL DEFAULT '{}',
-		skills JSONB NOT NULL DEFAULT '{}',
-		location JSONB NOT NULL DEFAULT '{}',
-		state INTEGER DEFAULT 0,
-		created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-		last_played TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-		play_time INTERVAL DEFAULT '0 seconds',
-		level INTEGER DEFAULT 1,
-		experience INTEGER DEFAULT 0,
-		death_count INTEGER DEFAULT 0,
-		kill_count INTEGER DEFAULT 0,
-		description TEXT DEFAULT '',
-		appearance JSONB NOT NULL DEFAULT '{}'
-	);
-
-	CREATE TABLE item_instances (
-		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		template_id VARCHAR(100) NOT NULL,
-		owner_id VARCHAR(100) NOT NULL,
-		quantity INTEGER DEFAULT 1,
-		durability INTEGER DEFAULT 100,
-		enchantments JSONB NOT NULL DEFAULT '[]',
-		custom_name VARCHAR(255),
-		modifications JSONB NOT NULL DEFAULT '{}',
-		created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-		last_used TIMESTAMP WITH TIME ZONE
-	);
-
-	CREATE INDEX idx_characters_player_id ON characters(player_id);
-	CREATE INDEX idx_characters_name ON characters(name);
-	CREATE INDEX idx_item_instances_owner ON item_instances(owner_id);
-	CREATE INDEX idx_item_instances_template ON item_instances(template_id);
-	`
-
-	_, err := repoManager.GetDB().Exec(schema)
-	return err
-}
-
-func cleanupTestDatabase(dbName string) {
-	// Try containerized postgres first, then local postgres
-	adminConnStrings := []string{
-		"postgres://testuser:testpass@localhost:5433/postgres?sslmode=disable", // Docker container
-		"postgres://localhost/postgres?sslmode=disable",                        // Local postgres
-	}
-
-	var db *sql.DB
-	var err error
-
-	for _, cs := range adminConnStrings {
-		db, err = sql.Open("postgres", cs)
-		if err != nil {
-			continue
-		}
-		if err = db.Ping(); err != nil {
-			db.Close()
-			continue
-		}
-		break
-	}
-
-	if db == nil {
-		return
-	}
-	defer db.Close()
-
-	// Force disconnect all connections to the test database
-	db.Exec(fmt.Sprintf(`
-		SELECT pg_terminate_backend(pid)
-		FROM pg_stat_activity 
-		WHERE datname = '%s' AND pid <> pg_backend_pid()`, dbName))
-
-	// Drop the database
-	db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+	t.Cleanup(func() { manager.Close() })
+	return manager
 }
 
 func createTestPlayer() *player.Player {

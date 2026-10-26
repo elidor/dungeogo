@@ -15,8 +15,9 @@ import (
 )
 
 type SessionHandler struct {
-	repoManager interfaces.RepositoryManager
-	gameEngine  GameEngine
+	repoManager  interfaces.RepositoryManager
+	gameEngine   GameEngine
+	startingRoom string
 }
 
 type GameEngine interface {
@@ -26,10 +27,14 @@ type GameEngine interface {
 
 func NewSessionHandler(repoManager interfaces.RepositoryManager, gameEngine GameEngine) *SessionHandler {
 	return &SessionHandler{
-		repoManager: repoManager,
-		gameEngine:  gameEngine,
+		repoManager:  repoManager,
+		gameEngine:   gameEngine,
+		startingRoom: "starting_room",
 	}
 }
+
+// SetStartingRoom configures the validated spawn before accepting sessions.
+func (sh *SessionHandler) SetStartingRoom(roomID string) { sh.startingRoom = roomID }
 
 func (sh *SessionHandler) HandleClient(client *Client) {
 	defer func() {
@@ -426,11 +431,38 @@ func (sh *SessionHandler) handleCharacterSelectByNumber(client *Client, input st
 	}
 
 	selected := characters[index-1]
+	spawn, err := sh.repoManager.World().LoadRoomDefinition(sh.startingRoom)
+	if err != nil {
+		client.Send("Error loading the starting room.")
+		client.SetState(StateCharacterSelection)
+		sh.showCharacterMenu(client)
+		return
+	}
+	spawnLocation := &character.Location{RoomID: spawn.ID, ZoneID: spawn.ZoneID}
+	if err := sh.repoManager.Characters().UpdateCharacterLocation(selected.ID, spawnLocation); err != nil {
+		client.Send("Error placing character in the starting room.")
+		client.SetState(StateCharacterSelection)
+		sh.showCharacterMenu(client)
+		return
+	}
+
 	client.ClearTempMenuData()
 	client.SetCharacterID(selected.ID)
 	client.SetState(StateInGame)
 	client.Send(fmt.Sprintf("Welcome, %s!", selected.Name))
 	client.Send("You enter the game world...")
+
+	// Show the character's surroundings immediately, just as if they had run
+	// the look command after entering the game.
+	responses, err := sh.gameEngine.ProcessCommand(selected.ID, "look")
+	if err != nil {
+		client.Send(fmt.Sprintf("Error displaying current room: %v", err))
+	} else {
+		for _, response := range responses {
+			client.Send(response)
+		}
+	}
+
 	client.SendPrompt("> ")
 }
 

@@ -240,3 +240,21 @@ The PostgreSQL schema includes:
 📋 **Planned**: Web interface, advanced game mechanics, deployment configurations
 
 The project has a solid foundation with 97+ tests, containerized database testing, and production-ready architecture patterns. Ready for additional features or deployment considerations.
+
+### World initialization
+
+The server embeds and automatically applies versioned SQL migrations before
+accepting connections. A fresh database receives the nine-room starter grid.
+`STARTING_ROOM` selects the spawn room (default `starting_room`); its zone is read
+from the room definition. Startup rejects a missing spawn, malformed exits, or
+any exit targeting a nonexistent room with an actionable error.
+
+Databases initialized manually with migrations 001 or 002 are adopted after
+checking their columns and constraints against the versioned schema. Incompatible
+or partial schemas stop startup. Existing accounts, characters, items, and dynamic
+room state are preserved. The grid migration updates starter room metadata once;
+subsequent boots do not replay seeds or reset room edits.
+
+For required database verification, run `./verify-db.sh` with `TEST_DATABASE_URL`
+pointing to PostgreSQL and a role with `CREATEDB`. Unlike optional database tests,
+this command fails if PostgreSQL is unavailable. See [TESTING.md](TESTING.md).

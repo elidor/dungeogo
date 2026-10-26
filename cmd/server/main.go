@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -43,12 +44,24 @@ func main() {
 	}
 	defer repoManager.Close()
 
+	startingRoom := cfg.GetValue(config.StartingRoom)
+	if startingRoom == "" {
+		startingRoom = postgres.DefaultStartingRoom
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := repoManager.Bootstrap(ctx, startingRoom); err != nil {
+		cancel()
+		log.Fatalf("Failed to initialize world: %v", err)
+	}
+	cancel()
+
 	// Initialize game engine
 	log.Println("Starting game engine...")
 	gameEngine := game.NewEngine(repoManager)
 
 	// Initialize session handler
 	sessionHandler := server.NewSessionHandler(repoManager, gameEngine)
+	sessionHandler.SetStartingRoom(startingRoom)
 
 	// Initialize connection manager
 	connectionManager := server.NewConnectionManager(100, 30*time.Minute)

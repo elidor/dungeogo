@@ -14,6 +14,7 @@ const (
 	Port           = "PORT"
 	BindAddress    = "BIND_ADDRESS"
 	DatabaseURL    = "DATABASE_URL"
+	StartingRoom   = "STARTING_ROOM"
 	MaxConnections = "MAX_CONNECTIONS"
 	MaxThreads     = "MAX_THREADS"
 )

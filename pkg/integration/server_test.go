@@ -160,6 +160,7 @@ func TestServerIntegration_GameEngineCommands(t *testing.T) {
 		expected string
 	}{
 		{"look", "Simple Room"},
+		{"north", "Northern Walk"},
 		{"score", testChar.Name},
 		{"help", "Available command categories"},
 		{"who", "Players currently online"},
@@ -607,12 +608,15 @@ func TestServerIntegration_GuidedSelectAndDeleteByNumber(t *testing.T) {
 
 	// Alphabetical ordering means Alpha is #1 and should be selected.
 	fmt.Fprintf(conn, "1\n")
-	selectedOut, err := readUntilContains(conn, reader, "You enter the game world...")
+	selectedOut, err := readUntilContains(conn, reader, "You are in a basic room")
 	if err != nil {
 		t.Fatalf("Failed waiting for game entry after select: %v", err)
 	}
 	if !strings.Contains(selectedOut, "Welcome, Alpha!") {
 		t.Fatalf("Expected to select Alpha by #1, got: %q", selectedOut)
+	}
+	if !strings.Contains(selectedOut, "A Simple Room") {
+		t.Fatalf("Expected the current room to be displayed after selection, got: %q", selectedOut)
 	}
 
 	// New session for deletion flow.
