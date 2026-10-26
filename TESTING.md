@@ -194,3 +194,14 @@ Migration coverage includes a fresh database, unversioned upgrades from migratio
 rejection, repeat startup without reseeding, missing spawn, and broken exits.
 Movement tests use the migrated starter grid and check persisted locations,
 blocked exits, and failed database writes.
+
+Session location tests (`TestSessionLocation` in `pkg/integration`) exercise the
+real TCP handler: guided creation, configured spawn, movement between zones,
+blocked exits, failed movement writes, abrupt disconnect, reconnect with a fresh
+engine, graceful quit, valid saved locations, missing/empty/invalid locations,
+and read/write failures during entry. These tests wait for session cleanup before
+dropping their database. Run them with the race detector using:
+
+```bash
+DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/integration -run TestSessionLocation
+```

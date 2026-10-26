@@ -1,10 +1,15 @@
 package interfaces
 
 import (
+	"errors"
+
 	"github.com/elidor/dungeogo/pkg/game/character"
 	"github.com/elidor/dungeogo/pkg/game/items"
 	"github.com/elidor/dungeogo/pkg/game/player"
 )
+
+// ErrRoomNotFound distinguishes a missing world location from a storage failure.
+var ErrRoomNotFound = errors.New("room definition not found")
 
 type PlayerRepository interface {
 	CreatePlayer(player *player.Player) error

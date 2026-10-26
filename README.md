@@ -258,3 +258,9 @@ subsequent boots do not replay seeds or reset room edits.
 For required database verification, run `./verify-db.sh` with `TEST_DATABASE_URL`
 pointing to PostgreSQL and a role with `CREATEDB`. Unlike optional database tests,
 this command fails if PostgreSQL is unavailable. See [TESTING.md](TESTING.md).
+
+Character selection restores a saved room when both its room ID and zone match the
+world definition. Missing rooms, empty locations, and mismatched zones recover to
+the configured spawn and persist that recovery. Storage failures keep the player
+at character selection. Movement commits its destination before reporting success;
+blocked exits and failed writes preserve the saved location.

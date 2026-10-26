@@ -56,7 +56,7 @@ func (r *WorldRepository) LoadRoomDefinition(roomID string) (*interfaces.RoomDef
 	if err := r.db.QueryRow(query, roomID).Scan(&definition.ID, &definition.ZoneID,
 		&definition.Name, &definition.Description, &exitsJSON, &flagsJSON); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("room definition not found: %s", roomID)
+			return nil, fmt.Errorf("%w: %s", interfaces.ErrRoomNotFound, roomID)
 		}
 		return nil, fmt.Errorf("failed to load room definition: %w", err)
 	}
