@@ -19,18 +19,23 @@ type SessionHandler struct {
 	repoManager  interfaces.RepositoryManager
 	gameEngine   GameEngine
 	startingRoom string
+	presence     *SessionRegistry
 }
 
 type GameEngine interface {
+	SetOnlineCharacters(func() []interfaces.OnlineCharacter)
 	ProcessCommand(characterID string, command string) ([]string, error)
 	GetCharacterState(characterID string) (interface{}, error)
 }
 
 func NewSessionHandler(repoManager interfaces.RepositoryManager, gameEngine GameEngine) *SessionHandler {
+	registry := NewSessionRegistry()
+	gameEngine.SetOnlineCharacters(registry.Characters)
 	return &SessionHandler{
 		repoManager:  repoManager,
 		gameEngine:   gameEngine,
 		startingRoom: "starting_room",
+		presence:     registry,
 	}
 }
 
@@ -39,6 +44,7 @@ func (sh *SessionHandler) SetStartingRoom(roomID string) { sh.startingRoom = roo
 
 func (sh *SessionHandler) HandleClient(client *Client) {
 	defer func() {
+		sh.presence.Remove(client)
 		fmt.Printf("Client disconnected: id=%s playerID=%s characterID=%s state=%d\n",
 			client.GetID(), client.GetPlayerID(), client.GetCharacterID(), client.GetState())
 		client.Close()
@@ -65,6 +71,13 @@ func (sh *SessionHandler) HandleClient(client *Client) {
 			break
 		}
 
+		if client.GetState() >= StateCharacterSelection && client.GetState() <= StateInGame {
+			if !sh.presence.WithSession(client, func() { sh.handleAuthenticatedInput(client, line) }) {
+				client.Close()
+				return
+			}
+			continue
+		}
 		switch client.GetState() {
 		case StateConnected:
 			sh.handleLogin(client, line)
@@ -74,17 +87,22 @@ func (sh *SessionHandler) HandleClient(client *Client) {
 			sh.handleAccountCreation(client, line)
 		case StateConfirmingPassword:
 			sh.handlePasswordConfirmation(client, line)
-		case StateCharacterSelection:
-			sh.handleCharacterSelection(client, line)
-		case StateCharacterCreation:
-			sh.handleCharacterCreation(client, line)
-		case StateCharacterSelecting:
-			sh.handleCharacterSelectByNumber(client, line)
-		case StateCharacterDeleting:
-			sh.handleCharacterDeleteByNumber(client, line)
-		case StateInGame:
-			sh.handleGameCommand(client, line)
 		}
+	}
+}
+
+func (sh *SessionHandler) handleAuthenticatedInput(client *Client, line string) {
+	switch client.GetState() {
+	case StateCharacterSelection:
+		sh.handleCharacterSelection(client, line)
+	case StateCharacterCreation:
+		sh.handleCharacterCreation(client, line)
+	case StateCharacterSelecting:
+		sh.handleCharacterSelectByNumber(client, line)
+	case StateCharacterDeleting:
+		sh.handleCharacterDeleteByNumber(client, line)
+	case StateInGame:
+		sh.handleGameCommand(client, line)
 	}
 }
 
@@ -159,6 +177,7 @@ func (sh *SessionHandler) handlePasswordAuth(client *Client, password string) {
 	}
 
 	// Authentication successful
+	sh.presence.Register(client)
 	existingPlayer.UpdateLastLogin()
 	sh.repoManager.Players().UpdatePlayerLogin(playerID)
 
@@ -438,6 +457,15 @@ func (sh *SessionHandler) handleCharacterSelectByNumber(client *Client, input st
 		sh.showCharacterMenu(client)
 		return
 	}
+
+	active, err := sh.repoManager.Characters().GetCharacter(selected.ID)
+	if err != nil {
+		client.Send("Error loading character. Please try again.")
+		client.SetState(StateCharacterSelection)
+		sh.showCharacterMenu(client)
+		return
+	}
+	sh.presence.Select(client, active)
 
 	client.ClearTempMenuData()
 	client.SetCharacterID(selected.ID)
@@ -876,6 +904,7 @@ func (sh *SessionHandler) createAccount(client *Client) {
 
 	// Set player ID and continue to character selection
 	client.SetPlayerID(newPlayer.ID)
+	sh.presence.Register(client)
 	client.Send(fmt.Sprintf("Account created successfully! Welcome to DungeoGo, %s!", username))
 	client.SetState(StateCharacterSelection)
 	sh.showCharacterMenu(client)

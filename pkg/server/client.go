@@ -29,6 +29,7 @@ type Client struct {
 	tempTargetCharacterName string // For guided select/delete flows
 	tempMenuStep            int    // For guided menu flows
 	mutex                   sync.RWMutex
+	writeMutex              sync.Mutex
 }
 
 type ClientState int
@@ -58,35 +59,23 @@ func NewClient(id string, conn net.Conn) *Client {
 	}
 }
 
-func (c *Client) Send(message string) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+func (c *Client) Send(message string) error { return c.write(message + "\r\n") }
 
-	if !c.connected {
+func (c *Client) SendPrompt(prompt string) error { return c.write(prompt) }
+
+func (c *Client) write(message string) error {
+	c.writeMutex.Lock()
+	defer c.writeMutex.Unlock()
+	if !c.IsConnected() {
 		return ErrClientDisconnected
 	}
-
-	_, err := c.writer.WriteString(message + "\r\n")
-	if err != nil {
+	// A stalled peer must not hold its account's action gate indefinitely.
+	if err := c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return err
 	}
-
-	return c.writer.Flush()
-}
-
-func (c *Client) SendPrompt(prompt string) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	if !c.connected {
-		return ErrClientDisconnected
-	}
-
-	_, err := c.writer.WriteString(prompt)
-	if err != nil {
+	if _, err := c.writer.WriteString(message); err != nil {
 		return err
 	}
-
 	return c.writer.Flush()
 }
 
@@ -176,14 +165,14 @@ func (c *Client) IsConnected() bool {
 
 func (c *Client) Close() error {
 	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
 	if !c.connected {
+		c.mutex.Unlock()
 		return nil
 	}
-
 	c.connected = false
 	c.state = StateDisconnecting
+	c.mutex.Unlock()
+	// Closing the socket interrupts in-flight reads/writes without waiting for the writer.
 	return c.conn.Close()
 }
 
