@@ -2,15 +2,17 @@ package commands
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
+	"github.com/elidor/dungeogo/pkg/game/actions"
+	"github.com/elidor/dungeogo/pkg/game/world"
 	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 )
 
 type Executor struct {
-	repoManager interfaces.RepositoryManager
-	handlers    map[string]CommandHandler
+	repoManager  interfaces.RepositoryManager
+	handlers     map[string]CommandHandler
+	worldActions *actions.World
 }
 
 type CommandHandler interface {
@@ -28,6 +30,7 @@ func NewExecutor(repoManager interfaces.RepositoryManager) *Executor {
 		handlers:    make(map[string]CommandHandler),
 	}
 
+	e.worldActions = actions.NewWorld(repoManager)
 	e.initializeHandlers()
 	return e
 }
@@ -37,7 +40,29 @@ func (e *Executor) SetOnlineCharacters(source func() []interfaces.OnlineCharacte
 	e.handlers["who"] = &WhoHandler{onlineCharacters: source}
 }
 
+// SetPresence configures the shared world-action boundary before sessions start.
+func (e *Executor) SetPresence(presence world.Presence) { e.worldActions.SetPresence(presence) }
+
+// ExecuteAction returns addressed delivery effects; Execute preserves actor-only callers.
+func (e *Executor) ExecuteAction(cmd *Command) (world.Result, error) {
+	if cmd.Type != CommandUnknown && cmd.ValidateArgs() {
+		if cmd.Type == CommandMovement {
+			return e.worldActions.Move(cmd.CharacterID, cmd.Verb), nil
+		}
+		if cmd.Verb == "look" && len(cmd.Args) == 0 {
+			return e.worldActions.Look(cmd.CharacterID), nil
+		}
+	}
+	lines, err := e.executeText(cmd)
+	return world.Reply(cmd.CharacterID, lines...), err
+}
+
 func (e *Executor) Execute(cmd *Command) ([]string, error) {
+	result, err := e.ExecuteAction(cmd)
+	return result.Replies(cmd.CharacterID), err
+}
+
+func (e *Executor) executeText(cmd *Command) ([]string, error) {
 	if cmd.Type == CommandUnknown {
 		return []string{fmt.Sprintf("Unknown command: %s", cmd.Verb)}, nil
 	}
@@ -120,33 +145,7 @@ type MovementHandler struct {
 }
 
 func (h *MovementHandler) Execute(cmd *Command) ([]string, error) {
-	char, err := h.repoManager.Characters().GetCharacter(cmd.CharacterID)
-	if err != nil || char.Location == nil {
-		return []string{"You cannot move right now."}, nil
-	}
-
-	room, err := h.repoManager.World().LoadRoomDefinition(char.Location.RoomID)
-	if err != nil {
-		return []string{"You cannot determine which way to go."}, nil
-	}
-
-	destinationID, exists := room.Exits[h.direction]
-	if !exists {
-		return []string{fmt.Sprintf("You cannot go %s from here.", h.direction)}, nil
-	}
-
-	destination, err := h.repoManager.World().LoadRoomDefinition(destinationID)
-	if err != nil {
-		return []string{fmt.Sprintf("The way %s is blocked.", h.direction)}, nil
-	}
-
-	char.Location.RoomID = destination.ID
-	char.Location.ZoneID = destination.ZoneID
-	if err := h.repoManager.Characters().UpdateCharacterLocation(char.ID, char.Location); err != nil {
-		return []string{"You cannot move right now."}, nil
-	}
-
-	return append([]string{fmt.Sprintf("You move %s.", h.direction)}, roomDescriptionResponses(destination)...), nil
+	return actions.NewWorld(h.repoManager).Move(cmd.CharacterID, h.direction).Replies(cmd.CharacterID), nil
 }
 
 type SayHandler struct{}
@@ -204,34 +203,9 @@ type LookHandler struct {
 
 func (h *LookHandler) Execute(cmd *Command) ([]string, error) {
 	if len(cmd.Args) == 0 {
-		char, err := h.repoManager.Characters().GetCharacter(cmd.CharacterID)
-		if err == nil && char.Location != nil {
-			room, err := h.repoManager.World().LoadRoomDefinition(char.Location.RoomID)
-			if err == nil {
-				return roomDescriptionResponses(room), nil
-			}
-		}
-
-		return []string{"You are in an undefined room."}, nil
+		return actions.NewWorld(h.repoManager).Look(cmd.CharacterID).Replies(cmd.CharacterID), nil
 	}
-
-	target := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You look at %s.", target)}, nil
-}
-
-func roomDescriptionResponses(room *interfaces.RoomDefinition) []string {
-	directions := make([]string, 0, len(room.Exits))
-	for direction := range room.Exits {
-		directions = append(directions, direction)
-	}
-	sort.Strings(directions)
-
-	responses := []string{room.Name, room.Description}
-	if len(directions) == 0 {
-		return append(responses, "There are no obvious exits.")
-	}
-
-	return append(responses, fmt.Sprintf("Exits: %s.", strings.Join(directions, ", ")))
+	return []string{fmt.Sprintf("You look at %s.", strings.Join(cmd.Args, " "))}, nil
 }
 
 type ExamineHandler struct {

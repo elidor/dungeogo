@@ -31,6 +31,11 @@ type locationSession struct {
 
 func openLocationSession(t *testing.T, handler *server.SessionHandler) *locationSession {
 	t.Helper()
+	return openLocationSessionWithConn(t, handler, nil)
+}
+
+func openLocationSessionWithConn(t *testing.T, handler *server.SessionHandler, wrap func(net.Conn) net.Conn) *locationSession {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -40,6 +45,9 @@ func openLocationSession(t *testing.T, handler *server.SessionHandler) *location
 		defer close(done)
 		conn, err := listener.Accept()
 		if err == nil {
+			if wrap != nil {
+				conn = wrap(conn)
+			}
 			handler.HandleClient(server.NewClient(uuid.NewString(), conn))
 		}
 	}()

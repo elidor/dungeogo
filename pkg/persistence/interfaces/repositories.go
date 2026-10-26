@@ -6,6 +6,7 @@ import (
 	"github.com/elidor/dungeogo/pkg/game/character"
 	"github.com/elidor/dungeogo/pkg/game/items"
 	"github.com/elidor/dungeogo/pkg/game/player"
+	"github.com/elidor/dungeogo/pkg/game/world"
 )
 
 // ErrRoomNotFound distinguishes a missing world location from a storage failure.
@@ -64,14 +65,8 @@ type CharacterSummary struct {
 	IsAlive    bool
 }
 
-type RoomDefinition struct {
-	ID          string
-	ZoneID      string
-	Name        string
-	Description string
-	Exits       map[string]string
-	Flags       map[string]interface{}
-}
+// RoomDefinition is retained as an alias for existing repository callers.
+type RoomDefinition = world.Room
 
 type RoomState struct {
 	ID         string
@@ -109,11 +104,5 @@ type RepositoryManager interface {
 	Close() error
 }
 
-// OnlineCharacter is a value snapshot of a character selected in a live session.
-type OnlineCharacter struct {
-	ID    string
-	Name  string
-	Race  string
-	Class string
-	Level int
-}
+// OnlineCharacter is retained as an alias for existing presence callers.
+type OnlineCharacter = world.OnlineCharacter
