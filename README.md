@@ -326,3 +326,13 @@ The actor sees `You pick up a Training Sword.` and everyone else in the room see
 other rooms see nothing. If two players grab the same item at once, exactly one
 gets it; the other is told it isn't there any more. Ownership changes are durable
 and survive reconnects and restarts.
+
+### Giving items
+
+`give <item> <character>` hands something you carry to another character in the
+same room, e.g. `give sword Bo` or `give 2.sword Bo`. Only this form is accepted;
+`give sword to Bo` gets a usage hint. The item target works as for `get`/`drop`,
+and character names ignore case. The giver sees `You give a Training Sword to
+Bo.`, Bo sees `Ana gives you a Training Sword.`, and everyone else in the room
+sees `Ana gives a Training Sword to Bo.`. Giving to someone offline, in another
+room, or to yourself is refused and nothing changes.

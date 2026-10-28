@@ -48,3 +48,31 @@ func TestTellNameResolution(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchCharacter(t *testing.T) {
+	here := []world.OnlineCharacter{{ID: "1", Name: "Bo"}, {ID: "2", Name: "Moonbeam"}, {ID: "3", Name: "moonbeam"}}
+	for name, want := range map[string]string{"Bo": "1", "bo": "1", "BO": "1", "Moonbeam": "2", "moonbeam": "3"} {
+		got, found, ambiguous := matchCharacter(here, name)
+		if !found || ambiguous || got.ID != want {
+			t.Errorf("matchCharacter(%q) = %+v found=%v ambiguous=%v, want ID %s", name, got, found, ambiguous, want)
+		}
+	}
+	if _, found, ambiguous := matchCharacter(here, "MOONBEAM"); found || !ambiguous {
+		t.Errorf("MOONBEAM should be ambiguous: found=%v ambiguous=%v", found, ambiguous)
+	}
+	if _, found, ambiguous := matchCharacter(here, "Zed"); found || ambiguous {
+		t.Errorf("Zed should be not found: found=%v ambiguous=%v", found, ambiguous)
+	}
+}
+
+func TestRoomMessageExcludesEveryListedCharacter(t *testing.T) {
+	m := world.RoomMessage("r1", "Ana gives a Gem to Bo.", "ana", "bo")
+	for id, want := range map[string]bool{"ana": true, "bo": true, "cy": false} {
+		if got := m.Excludes(id); got != want {
+			t.Errorf("Excludes(%q) = %v, want %v", id, got, want)
+		}
+	}
+	if m.Scope != world.ToRoom || m.RoomID != "r1" {
+		t.Errorf("RoomMessage = %+v", m)
+	}
+}

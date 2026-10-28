@@ -299,6 +299,14 @@ reply when another writer moves the item between listing and transfer, and
 `TestGetStorageFailureChangesNothingAndIsLogged` a failed write: no room message,
 a logged item ID. `TestItemActions_OwnershipSurvivesServerRestart` restarts the
 repository and session handler and checks room and inventory ownership.
+
+`TestGive_ExchangeMessagesRejectionsAndRestart` drives `give` over TCP with the
+recipient, a bystander and someone in another room: each audience's wording,
+numbered targets, every rejection (missing item, other room, unknown, self, wrong
+syntax, offline recipient) leaving ownership unchanged, and inventories after a
+server restart. `TestGive_RacesWithRecipientMovingOrLeaving` gives while the
+recipient walks out or disconnects; whichever wins, the giver is told "You give"
+exactly when the item now belongs to the recipient.
 `TestOwnedItemsListInArrivalOrder` checks that an item which leaves and returns
 is listed last (migration `008_item_arrival_order.sql`).
 
