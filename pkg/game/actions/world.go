@@ -3,6 +3,7 @@ package actions
 
 import (
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -18,10 +19,11 @@ type World struct {
 	mutex        sync.Mutex
 	repositories interfaces.RepositoryManager
 	presence     world.Presence
+	logger       *log.Logger // operator diagnostics; players never see these
 }
 
 func NewWorld(repositories interfaces.RepositoryManager) *World {
-	return &World{repositories: repositories}
+	return &World{repositories: repositories, logger: log.Default()}
 }
 
 // SetPresence is configured once, before accepting sessions.
@@ -103,6 +105,7 @@ func (s *World) describe(room *world.Room, actorID string) []string {
 	}
 	roomItems, err := s.repositories.Items().GetRoomItems(room.ID)
 	if err != nil {
+		s.logger.Printf("room items unavailable: room=%s: %v", room.ID, err)
 		lines = append(lines, "Room contents are unavailable.")
 	} else if len(roomItems) > 0 {
 		lines = append(lines, "Items here:")
