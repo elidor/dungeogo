@@ -12,6 +12,9 @@ import (
 // ErrRoomNotFound distinguishes a missing world location from a storage failure.
 var ErrRoomNotFound = errors.New("room definition not found")
 
+// ErrItemNotFound distinguishes a missing Item from a storage failure.
+var ErrItemNotFound = errors.New("item not found")
+
 type PlayerRepository interface {
 	CreatePlayer(player *player.Player) error
 	GetPlayer(playerID string) (*player.Player, error)

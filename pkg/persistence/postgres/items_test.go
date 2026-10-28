@@ -1,11 +1,15 @@
 package postgres
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/elidor/dungeogo/internal/testdb"
 	"github.com/elidor/dungeogo/pkg/game/items"
+	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
+	"github.com/lib/pq"
 )
 
 func TestItemRepository_CreateItemInstance(t *testing.T) {
@@ -410,5 +414,44 @@ func TestItemRepository_CreateAndUpdateShareSaveSteps(t *testing.T) {
 	}
 	if !lastUsedIsNull || !updated.LastUsed.IsZero() || updated.Modifications["dulled"] != true || len(updated.Enchantments) != 0 || updated.Owner != items.RoomOwner("newbie_west") {
 		t.Fatalf("update did not store prepared fields: %+v (last_used null=%v)", updated, lastUsedIsNull)
+	}
+}
+
+func TestItemStorageErrorsNameTheItem(t *testing.T) {
+	manager := setupTestDB(t)
+	repo := manager.Items()
+	missing := "90000000-0000-4000-8000-0000000000ee"
+
+	_, getErr := repo.GetItemInstance(missing)
+	ghost := createTestItemInstance()
+	ghost.ID = missing
+	for name, err := range map[string]error{
+		"get":    getErr,
+		"update": repo.UpdateItemInstance(ghost),
+		"delete": repo.DeleteItemInstance(missing),
+	} {
+		if !errors.Is(err, interfaces.ErrItemNotFound) {
+			t.Errorf("%s missing item: error %v is not ErrItemNotFound", name, err)
+		}
+		if err == nil || !strings.Contains(err.Error(), missing) {
+			t.Errorf("%s missing item: error %v does not name the item", name, err)
+		}
+	}
+
+	// A real storage failure keeps its cause and names the Item.
+	item := createTestItemInstance()
+	if err := repo.CreateItemInstance(item); err != nil {
+		t.Fatal(err)
+	}
+	err := repo.CreateItemInstance(item)
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || pqErr.Code != "23505" {
+		t.Fatalf("duplicate create: want wrapped unique violation, got %v", err)
+	}
+	if !strings.Contains(err.Error(), item.ID) || !strings.HasPrefix(err.Error(), "failed to create item") {
+		t.Fatalf("duplicate create error %q should start with 'failed to create item' and name %s", err, item.ID)
+	}
+	if errors.Is(err, interfaces.ErrItemNotFound) {
+		t.Fatalf("storage failure misreported as not found: %v", err)
 	}
 }
