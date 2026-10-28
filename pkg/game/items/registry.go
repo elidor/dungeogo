@@ -200,13 +200,23 @@ func (ir *ItemRegistry) DisplayName(item *ItemInstance) string {
 	if item.CustomName != "" {
 		return item.CustomName
 	}
-	if template, err := ir.GetTemplate(item.TemplateID); err == nil {
+	if template, err := ir.GetTemplate(item.TemplateID); err == nil && template.Name != "" {
 		return template.Name
 	}
 	if item.TemplateID != "" {
 		return strings.ReplaceAll(item.TemplateID, "_", " ")
 	}
 	return "Unknown Item"
+}
+
+// ShortDescription is how an Item is named inside a sentence: its display name
+// with "a" or "an", e.g. "a Training Sword", "an Iron Key".
+func (ir *ItemRegistry) ShortDescription(item *ItemInstance) string {
+	name := ir.DisplayName(item)
+	if strings.ContainsRune("aeiouAEIOU", rune(name[0])) {
+		return "an " + name
+	}
+	return "a " + name
 }
 
 // Label is how an Item is listed in look and inventory: its display name, with

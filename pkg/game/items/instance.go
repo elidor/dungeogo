@@ -15,6 +15,7 @@ type ItemInstance struct {
 	Modifications map[string]interface{}
 	CreatedAt     time.Time
 	LastUsed      time.Time
+	HeldSince     time.Time // when the Item came to its current Owner; set by storage
 }
 
 type Enchantment struct {

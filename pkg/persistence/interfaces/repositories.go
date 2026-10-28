@@ -43,6 +43,8 @@ type ItemRepository interface {
 	// the Item; use TransferItem for that.
 	UpdateItemInstance(item *items.ItemInstance) error
 	DeleteItemInstance(itemID string) error
+	// GetPlayerItems and GetRoomItems list an Owner's Items in arrival order:
+	// oldest first, ties broken by ID.
 	GetPlayerItems(characterID string) ([]*items.ItemInstance, error)
 	GetRoomItems(roomID string) ([]*items.ItemInstance, error)
 	// TransferItem moves an Item from the Owner the caller expects it to have

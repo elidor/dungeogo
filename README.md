@@ -310,5 +310,19 @@ with the item ID and repair guidance. Callers always name the owner's kind, and
 items change hands only through a conditional transfer from their expected
 current owner (ADR-0002).
 
-Restarts do not duplicate, relocate, or respawn seeded items. Pickup/drop commands
-are tracked in #10; this change provides persistent storage and inspection.
+Restarts do not duplicate, relocate, or respawn seeded items.
+
+### Picking up and dropping items
+
+`get <item>` (or `take <item>`) picks an item up from the current room, and
+`drop <item>` puts one down. An item target is a keyword matching the start of any
+word in the item's name, so `sw`, `sword` and `training` all mean "Training Sword".
+A bare keyword takes the first match; `get 2.sword` takes the second, `3.sword` the
+third. Matches are numbered in arrival order: the order items came to the room or
+inventory, oldest first, which is also the order `look` and `inventory` list them.
+
+The actor sees `You pick up a Training Sword.` and everyone else in the room sees
+`Traveler picks up a Training Sword.` (likewise `drops` for drop). Characters in
+other rooms see nothing. If two players grab the same item at once, exactly one
+gets it; the other is told it isn't there any more. Ownership changes are durable
+and survive reconnects and restarts.
