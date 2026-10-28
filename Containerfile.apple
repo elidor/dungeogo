@@ -1,0 +1,7 @@
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY bin/dungeogo /dungeogo
+
+EXPOSE 8080
+USER nonroot:nonroot
+ENTRYPOINT ["/dungeogo"]
