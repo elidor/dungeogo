@@ -70,8 +70,14 @@ make run
 ### Apple Container (macOS Tahoe)
 
 Apple Container supports OCI images but does not use Docker Compose. This project
-includes a `Containerfile` and a small orchestration script that starts PostgreSQL
+includes `Containerfile.apple` and a small orchestration script that starts PostgreSQL
 and the game server on an isolated Apple Container network.
+
+The script compiles the Linux ARM64 server on the host first, so Go must be
+installed, and packages it into a minimal image built with `--no-cache`. Building
+from source inside Apple Container could reuse a stale source context and ship an
+old server. The server container also runs `bin/dungeogo` through a read-only bind
+mount, so `make apple-up` after a rebuild always runs the binary you just compiled.
 
 ```bash
 # Install Apple Container, then initialize its services once.
