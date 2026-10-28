@@ -29,7 +29,7 @@ func (r itemsOnly) Items() interfaces.ItemRepository { return r.items }
 
 func TestFailedRoomItemLookupIsLoggedNotShown(t *testing.T) {
 	cause := errors.New("connection reset by peer")
-	service := NewWorld(itemsOnly{items: failingRoomItems{err: cause}})
+	service := NewWorld(itemsOnly{items: failingRoomItems{err: cause}}, items.NewItemRegistry())
 	var logged bytes.Buffer
 	service.logger = log.New(&logged, "", 0)
 

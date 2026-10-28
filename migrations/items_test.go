@@ -62,7 +62,7 @@ func TestItemOwnershipUpgradePreservesLegacyRows(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if item.Owner.Kind != items.OwnerCharacter || item.Owner.ID != legacyCharacter || item.Quantity != 3 || item.Durability != 47 || item.Modifications["legacy"] != true || !item.LastUsed.IsZero() || item.GetDisplayName() != "Rusty Sword" {
+			if item.Owner.Kind != items.OwnerCharacter || item.Owner.ID != legacyCharacter || item.Quantity != 3 || item.Durability != 47 || item.Modifications["legacy"] != true || !item.LastUsed.IsZero() || items.NewItemRegistry().DisplayName(item) != "Rusty Sword" {
 				t.Fatalf("legacy item altered: %+v", item)
 			}
 			roomItems, err := manager.Items().GetRoomItems("newbie_east")

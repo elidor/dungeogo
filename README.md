@@ -298,15 +298,17 @@ messages are never queued for a future login.
 Versioned setup seeds three individual items once: a Training Sword and Travel
 Lantern in the starting room, and a Smooth Stone in the northern room. `look`
 shows the current room's items; `inventory` shows only the selected character's
-items. Names come from a custom name or known template, and each displayed item
-includes its instance ID. Existing quantities are displayed without adding new
-stacking behavior.
+items. Items are listed by name only: a custom name if one is set, otherwise the
+item's template name. Instance IDs are never shown to players. Existing
+quantities are displayed without adding new stacking behavior.
 
 Item ownership records an explicit room or character kind. Database foreign keys
-require the owner to exist, and prevent deleting a room or character while it
-still owns items. Legacy ownership is migrated without resetting item state;
-missing or ambiguous owners stop startup with the item ID and repair guidance.
-Callers may still supply only an owner ID when it uniquely identifies an owner.
+require the owner to exist. A room can't be deleted while it holds items;
+deleting a character destroys the items it holds (ADR-0001). Legacy ownership is
+migrated without resetting item state; missing or ambiguous owners stop startup
+with the item ID and repair guidance. Callers always name the owner's kind, and
+items change hands only through a conditional transfer from their expected
+current owner (ADR-0002).
 
 Restarts do not duplicate, relocate, or respawn seeded items. Pickup/drop commands
 are tracked in #10; this change provides persistent storage and inspection.
