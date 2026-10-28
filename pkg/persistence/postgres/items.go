@@ -12,46 +12,29 @@ type ItemRepository struct{ db *sql.DB }
 
 func NewItemRepository(db *sql.DB) *ItemRepository { return &ItemRepository{db: db} }
 
-// resolveOwner is the single place that decides whether an owner ID names a Room
-// or a Character. An Owner with a known Kind is checked and returned unchanged;
-// an Owner with no Kind is classified by looking the ID up. Generated foreign
-// keys enforce that the owner exists.
-func (r *ItemRepository) resolveOwner(owner items.Owner) (items.Owner, error) {
-	if owner.Kind != "" {
-		if !owner.Kind.Valid() {
-			return items.Owner{}, fmt.Errorf("invalid item owner kind %q", owner.Kind)
-		}
-		return owner, nil
+// validateOwner rejects an Owner whose kind is missing or unknown, or whose ID
+// is empty. Callers always say which kind of owner they mean; nothing infers
+// the kind from the ID. The generated foreign keys check the owner exists.
+func validateOwner(owner items.Owner) error {
+	if !owner.Kind.Valid() {
+		return fmt.Errorf("invalid item %s: kind must be %q or %q", owner, items.OwnerRoom, items.OwnerCharacter)
 	}
-	var room, character bool
-	err := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM room_definitions WHERE room_id=$1), EXISTS(SELECT 1 FROM characters WHERE id::text=$1)`, owner.ID).Scan(&room, &character)
-	if err != nil {
-		return items.Owner{}, fmt.Errorf("resolve item owner: %w", err)
+	if owner.ID == "" {
+		return fmt.Errorf("invalid item owner: %s has no ID", owner.Kind)
 	}
-	if room == character {
-		return items.Owner{}, fmt.Errorf("item %s must identify exactly one existing room or character; specify owner kind for ambiguous IDs", owner)
-	}
-	if room {
-		return items.RoomOwner(owner.ID), nil
-	}
-	return items.CharacterOwner(owner.ID), nil
+	return nil
 }
 
 // storedItem is an Item's fields in the form both create and update write.
 type storedItem struct {
-	owner         items.Owner
 	enchantments  []byte
 	modifications []byte
 	lastUsed      sql.NullTime
 }
 
-// prepareItem runs the save steps create and update share: resolving the
-// Owner and serializing the fields stored as JSON or nullable columns.
-func (r *ItemRepository) prepareItem(item *items.ItemInstance) (storedItem, error) {
-	owner, err := r.resolveOwner(item.Owner)
-	if err != nil {
-		return storedItem{}, err
-	}
+// prepareItem runs the save steps create and update share: serializing the
+// fields stored as JSON or nullable columns.
+func prepareItem(item *items.ItemInstance) (storedItem, error) {
 	enchantments, err := json.Marshal(item.Enchantments)
 	if err != nil {
 		return storedItem{}, err
@@ -61,7 +44,6 @@ func (r *ItemRepository) prepareItem(item *items.ItemInstance) (storedItem, erro
 		return storedItem{}, err
 	}
 	return storedItem{
-		owner:         owner,
 		enchantments:  enchantments,
 		modifications: modifications,
 		lastUsed:      sql.NullTime{Time: item.LastUsed, Valid: !item.LastUsed.IsZero()},
@@ -69,15 +51,17 @@ func (r *ItemRepository) prepareItem(item *items.ItemInstance) (storedItem, erro
 }
 
 func (r *ItemRepository) CreateItemInstance(item *items.ItemInstance) error {
-	stored, err := r.prepareItem(item)
+	if err := validateOwner(item.Owner); err != nil {
+		return err
+	}
+	stored, err := prepareItem(item)
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec(`INSERT INTO item_instances (id,template_id,owner_kind,owner_id,quantity,durability,enchantments,custom_name,modifications,created_at,last_used) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, item.ID, item.TemplateID, stored.owner.Kind, stored.owner.ID, item.Quantity, item.Durability, stored.enchantments, item.CustomName, stored.modifications, item.CreatedAt, stored.lastUsed)
+	_, err = r.db.Exec(`INSERT INTO item_instances (id,template_id,owner_kind,owner_id,quantity,durability,enchantments,custom_name,modifications,created_at,last_used) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, item.ID, item.TemplateID, item.Owner.Kind, item.Owner.ID, item.Quantity, item.Durability, stored.enchantments, item.CustomName, stored.modifications, item.CreatedAt, stored.lastUsed)
 	if err != nil {
 		return fmt.Errorf("create item instance: %w", err)
 	}
-	item.Owner = stored.owner
 	return nil
 }
 
@@ -110,17 +94,15 @@ func (r *ItemRepository) GetItemInstance(id string) (*items.ItemInstance, error)
 	return item, nil
 }
 
+// UpdateItemInstance saves an Item's own fields. It deliberately leaves
+// ownership alone, so a stale copy of an Item can't undo a TransferItem.
 func (r *ItemRepository) UpdateItemInstance(item *items.ItemInstance) error {
-	stored, err := r.prepareItem(item)
+	stored, err := prepareItem(item)
 	if err != nil {
 		return err
 	}
-	result, err := r.db.Exec(`UPDATE item_instances SET template_id=$2,owner_kind=$3,owner_id=$4,quantity=$5,durability=$6,enchantments=$7,custom_name=$8,modifications=$9,last_used=$10 WHERE id=$1`, item.ID, item.TemplateID, stored.owner.Kind, stored.owner.ID, item.Quantity, item.Durability, stored.enchantments, item.CustomName, stored.modifications, stored.lastUsed)
-	if err := requireItemUpdate(result, err); err != nil {
-		return err
-	}
-	item.Owner = stored.owner
-	return nil
+	result, err := r.db.Exec(`UPDATE item_instances SET template_id=$2,quantity=$3,durability=$4,enchantments=$5,custom_name=$6,modifications=$7,last_used=$8 WHERE id=$1`, item.ID, item.TemplateID, item.Quantity, item.Durability, stored.enchantments, item.CustomName, stored.modifications, stored.lastUsed)
+	return requireItemUpdate(result, err)
 }
 
 func (r *ItemRepository) DeleteItemInstance(id string) error {
@@ -151,15 +133,26 @@ func (r *ItemRepository) getOwnedItems(owner items.Owner) ([]*items.ItemInstance
 	return result, rows.Err()
 }
 
-// TransferItem preserves the legacy repository API for valid unambiguous owners.
-// Gameplay's conditional pickup/drop operations are introduced separately in #10.
-func (r *ItemRepository) TransferItem(id, newOwnerID string) error {
-	owner, err := r.resolveOwner(items.Owner{ID: newOwnerID})
-	if err != nil {
-		return err
+// TransferItem moves an Item from the Owner the caller expects to a new Owner.
+// The expected Owner is part of the WHERE clause, so the check and the move are
+// one atomic write: of two competing transfers of the same Item, the second
+// re-checks the row after the first commits, matches nothing, and reports false.
+func (r *ItemRepository) TransferItem(itemID string, from, to items.Owner) (bool, error) {
+	if err := validateOwner(from); err != nil {
+		return false, err
 	}
-	result, err := r.db.Exec(`UPDATE item_instances SET owner_kind=$1,owner_id=$2 WHERE id=$3`, owner.Kind, owner.ID, id)
-	return requireItemUpdate(result, err)
+	if err := validateOwner(to); err != nil {
+		return false, err
+	}
+	result, err := r.db.Exec(`UPDATE item_instances SET owner_kind=$4,owner_id=$5 WHERE id=$1 AND owner_kind=$2 AND owner_id=$3`, itemID, from.Kind, from.ID, to.Kind, to.ID)
+	if err != nil {
+		return false, fmt.Errorf("transfer item %q from %s to %s: %w", itemID, from, to, err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("transfer item %q: %w", itemID, err)
+	}
+	return count == 1, nil
 }
 
 func requireItemUpdate(result sql.Result, err error) error {

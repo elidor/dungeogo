@@ -36,11 +36,17 @@ type CharacterRepository interface {
 type ItemRepository interface {
 	CreateItemInstance(item *items.ItemInstance) error
 	GetItemInstance(itemID string) (*items.ItemInstance, error)
+	// UpdateItemInstance saves an Item's own fields. It never changes who holds
+	// the Item; use TransferItem for that.
 	UpdateItemInstance(item *items.ItemInstance) error
 	DeleteItemInstance(itemID string) error
 	GetPlayerItems(characterID string) ([]*items.ItemInstance, error)
 	GetRoomItems(roomID string) ([]*items.ItemInstance, error)
-	TransferItem(itemID, newOwnerID string) error
+	// TransferItem moves an Item from the Owner the caller expects it to have
+	// to a new Owner in one conditional write. It returns moved=false, changing
+	// nothing, if the Item doesn't exist or is no longer held by from, e.g.
+	// because a competing action moved it first.
+	TransferItem(itemID string, from, to items.Owner) (moved bool, err error)
 }
 
 type WorldRepository interface {

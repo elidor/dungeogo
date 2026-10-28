@@ -56,7 +56,7 @@ func createTestItemInstance() *items.ItemInstance {
 	return &items.ItemInstance{
 		ID:            uuid.New().String(),
 		TemplateID:    "test_template",
-		Owner:         items.Owner{ID: "newbie_west"},
+		Owner:         items.RoomOwner("newbie_west"),
 		Quantity:      1,
 		Durability:    100,
 		Enchantments:  []items.Enchantment{},

@@ -50,8 +50,8 @@ func TestStarterItems_RoomInventoryAndServerRestart(t *testing.T) {
 		t.Fatalf("new inventory: %q", out)
 	}
 	// Exercise persistence through the repository; get/drop commands are issue #10.
-	if err := manager.Items().TransferItem(starterItemSword, id); err != nil {
-		t.Fatal(err)
+	if moved, err := manager.Items().TransferItem(starterItemSword, items.RoomOwner("starting_room"), items.CharacterOwner(id)); err != nil || !moved {
+		t.Fatalf("transfer starter sword: moved=%v err=%v", moved, err)
 	}
 	sword, err := manager.Items().GetItemInstance(starterItemSword)
 	if err != nil {
