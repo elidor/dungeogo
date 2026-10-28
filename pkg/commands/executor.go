@@ -92,6 +92,9 @@ func (e *Executor) Execute(cmd *Command) ([]string, error) {
 }
 
 func (e *Executor) executeText(cmd *Command) ([]string, error) {
+	if notYetAvailable[cmd.Verb] {
+		return []string{fmt.Sprintf("'%s' isn't available yet. Type 'commands' to see what you can do.", cmd.Verb)}, nil
+	}
 	if cmd.Type == CommandUnknown {
 		return []string{fmt.Sprintf("Unknown command: %s", cmd.Verb)}, nil
 	}
@@ -124,44 +127,24 @@ func (e *Executor) initializeHandlers() {
 	// Communication handlers
 	e.handlers["say"] = &SayHandler{world: e.worldActions}
 	e.handlers["tell"] = &TellHandler{world: e.worldActions}
-	e.handlers["yell"] = &YellHandler{}
-	e.handlers["whisper"] = &WhisperHandler{}
-	e.handlers["chat"] = &ChatHandler{}
 
 	// Information handlers
 	e.handlers["look"] = &LookHandler{world: e.worldActions}
-	e.handlers["examine"] = &ExamineHandler{repoManager: e.repoManager}
 	e.handlers["who"] = &WhoHandler{}
 	e.handlers["score"] = &ScoreHandler{repoManager: e.repoManager}
-	e.handlers["time"] = &TimeHandler{}
-	e.handlers["weather"] = &WeatherHandler{}
 
 	// Inventory handlers
 	e.handlers["inventory"] = &InventoryHandler{repoManager: e.repoManager, templates: e.templates}
 	// get and drop run only through ExecuteAction, which delivers their room messages.
-	e.handlers["wear"] = &WearHandler{repoManager: e.repoManager}
-	e.handlers["remove"] = &RemoveHandler{repoManager: e.repoManager}
-
-	// Skill handlers
-	e.handlers["skills"] = &SkillsHandler{repoManager: e.repoManager}
-	e.handlers["practice"] = &PracticeHandler{repoManager: e.repoManager}
 
 	// System handlers
-	e.handlers["help"] = &HelpHandler{}
-	e.handlers["commands"] = &CommandsHandler{}
 	e.handlers["quit"] = &QuitHandler{}
 	e.handlers["save"] = &SaveHandler{repoManager: e.repoManager}
 
-	// Social handlers
 	e.handlers["emote"] = &EmoteHandler{world: e.worldActions}
-	e.handlers["smile"] = &SocialHandler{action: "smile"}
-	e.handlers["wave"] = &SocialHandler{action: "wave"}
-	e.handlers["bow"] = &SocialHandler{action: "bow"}
+	e.handlers["help"] = &HelpHandler{}
+	e.handlers["commands"] = &CommandsHandler{}
 
-	// Combat handlers (basic implementations)
-	e.handlers["kill"] = &KillHandler{repoManager: e.repoManager}
-	e.handlers["flee"] = &FleeHandler{}
-	e.handlers["defend"] = &DefendHandler{}
 }
 
 // Basic handler implementations
@@ -192,33 +175,6 @@ func (h *TellHandler) Execute(cmd *Command) ([]string, error) {
 	return h.world.Tell(cmd.CharacterID, cmd.Args[0], strings.Join(cmd.Args[1:], " ")).Replies(cmd.CharacterID), nil
 }
 
-type YellHandler struct{}
-
-func (h *YellHandler) Execute(cmd *Command) ([]string, error) {
-	message := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You yell: %s", message)}, nil
-}
-
-type WhisperHandler struct{}
-
-func (h *WhisperHandler) Execute(cmd *Command) ([]string, error) {
-	if len(cmd.Args) < 2 {
-		return []string{"Usage: whisper <player> <message>"}, nil
-	}
-
-	target := cmd.Args[0]
-	message := strings.Join(cmd.Args[1:], " ")
-
-	return []string{fmt.Sprintf("You whisper to %s: %s", target, message)}, nil
-}
-
-type ChatHandler struct{}
-
-func (h *ChatHandler) Execute(cmd *Command) ([]string, error) {
-	message := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("[Chat] You: %s", message)}, nil
-}
-
 type LookHandler struct {
 	world *actions.World
 }
@@ -227,16 +183,7 @@ func (h *LookHandler) Execute(cmd *Command) ([]string, error) {
 	if len(cmd.Args) == 0 {
 		return h.world.Look(cmd.CharacterID).Replies(cmd.CharacterID), nil
 	}
-	return []string{fmt.Sprintf("You look at %s.", strings.Join(cmd.Args, " "))}, nil
-}
-
-type ExamineHandler struct {
-	repoManager interfaces.RepositoryManager
-}
-
-func (h *ExamineHandler) Execute(cmd *Command) ([]string, error) {
-	target := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You examine %s closely.", target)}, nil
+	return []string{"Looking at a particular thing isn't available yet; 'look' on its own shows the room."}, nil
 }
 
 type WhoHandler struct {
@@ -280,18 +227,6 @@ func (h *ScoreHandler) Execute(cmd *Command) ([]string, error) {
 	}, nil
 }
 
-type TimeHandler struct{}
-
-func (h *TimeHandler) Execute(cmd *Command) ([]string, error) {
-	return []string{"It is midday in the realm."}, nil
-}
-
-type WeatherHandler struct{}
-
-func (h *WeatherHandler) Execute(cmd *Command) ([]string, error) {
-	return []string{"The weather is clear and pleasant."}, nil
-}
-
 type InventoryHandler struct {
 	repoManager interfaces.RepositoryManager
 	templates   *items.ItemRegistry
@@ -314,107 +249,6 @@ func (h *InventoryHandler) Execute(cmd *Command) ([]string, error) {
 	}
 
 	return response, nil
-}
-
-type WearHandler struct {
-	repoManager interfaces.RepositoryManager
-}
-
-func (h *WearHandler) Execute(cmd *Command) ([]string, error) {
-	item := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You wear %s.", item)}, nil
-}
-
-type RemoveHandler struct {
-	repoManager interfaces.RepositoryManager
-}
-
-func (h *RemoveHandler) Execute(cmd *Command) ([]string, error) {
-	item := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You remove %s.", item)}, nil
-}
-
-type SkillsHandler struct {
-	repoManager interfaces.RepositoryManager
-}
-
-func (h *SkillsHandler) Execute(cmd *Command) ([]string, error) {
-	// Get character's skills
-	_, err := h.repoManager.Characters().GetCharacter(cmd.CharacterID)
-	if err != nil {
-		return []string{"Error retrieving character skills."}, nil
-	}
-
-	response := []string{"Your skills:"}
-	// This would iterate through actual skills
-	response = append(response, "  Swords: 15", "  Magic: 8", "  Stealth: 12")
-
-	return response, nil
-}
-
-type PracticeHandler struct {
-	repoManager interfaces.RepositoryManager
-}
-
-func (h *PracticeHandler) Execute(cmd *Command) ([]string, error) {
-	skill := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You practice %s.", skill)}, nil
-}
-
-type HelpHandler struct{}
-
-func (h *HelpHandler) Execute(cmd *Command) ([]string, error) {
-	if len(cmd.Args) == 0 {
-		return []string{
-			"Available command categories:",
-			"  movement - Movement commands (north, south, etc.)",
-			"  communication - Chat commands (say, tell, etc.)",
-			"  inventory - Item commands (get, drop, wear, etc.)",
-			"  information - Info commands (look, examine, who, etc.)",
-			"  skills - Skill commands (skills, practice)",
-			"  social - Social commands (emote, smile, etc.)",
-			"",
-			"Type 'help <category>' for specific commands.",
-			"Type 'commands' to list all available commands.",
-		}, nil
-	}
-
-	topic := strings.ToLower(cmd.Args[0])
-	switch topic {
-	case "movement":
-		return []string{
-			"Movement commands:",
-			"  north, south, east, west (n, s, e, w)",
-			"  up, down (u, d)",
-			"  northeast, northwest, southeast, southwest (ne, nw, se, sw)",
-		}, nil
-	case "communication":
-		return []string{
-			"Communication commands:",
-			"  say <message> (') - Say something to everyone in the room",
-			"  tell <player> <message> (t) - Send private message",
-			"  yell <message> - Yell across the area",
-			"  whisper <player> <message> (w) - Whisper to someone",
-			"  chat <message> (.) - Talk on global chat channel",
-		}, nil
-	default:
-		return []string{fmt.Sprintf("No help available for topic: %s", topic)}, nil
-	}
-}
-
-type CommandsHandler struct{}
-
-func (h *CommandsHandler) Execute(cmd *Command) ([]string, error) {
-	return []string{
-		"Available commands:",
-		"Movement: north, south, east, west, up, down, ne, nw, se, sw",
-		"Communication: say, tell, yell, whisper, chat",
-		"Information: look, examine, who, score, time, weather",
-		"Inventory: inventory, get, drop, give, wear, remove",
-		"Skills: skills, practice",
-		"Social: emote, smile, wave, bow",
-		"System: help, commands, quit, save",
-	}, nil
 }
 
 type QuitHandler struct{}
@@ -447,38 +281,4 @@ type EmoteHandler struct{ world *actions.World }
 
 func (h *EmoteHandler) Execute(cmd *Command) ([]string, error) {
 	return h.world.Emote(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
-}
-
-type SocialHandler struct {
-	action string
-}
-
-func (h *SocialHandler) Execute(cmd *Command) ([]string, error) {
-	if len(cmd.Args) == 0 {
-		return []string{fmt.Sprintf("You %s.", h.action)}, nil
-	}
-
-	target := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You %s at %s.", h.action, target)}, nil
-}
-
-type KillHandler struct {
-	repoManager interfaces.RepositoryManager
-}
-
-func (h *KillHandler) Execute(cmd *Command) ([]string, error) {
-	target := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You attack %s!", target)}, nil
-}
-
-type FleeHandler struct{}
-
-func (h *FleeHandler) Execute(cmd *Command) ([]string, error) {
-	return []string{"You attempt to flee from combat!"}, nil
-}
-
-type DefendHandler struct{}
-
-func (h *DefendHandler) Execute(cmd *Command) ([]string, error) {
-	return []string{"You focus on defending yourself."}, nil
 }

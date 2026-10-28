@@ -1,32 +1,31 @@
 # DungeoGo
 
-A modern Multi-User Dungeon (MUD) server written in Go with comprehensive testing and PostgreSQL persistence.
+A text-based Multi-User Dungeon (MUD) server written in Go, backed by PostgreSQL.
 
 ## Overview
 
-DungeoGo is a text-based multiplayer game server that implements classic MUD mechanics with modern architecture patterns. Players can create characters, explore a virtual world, interact with items, and communicate with other players through a TCP-based interface.
+Players connect over TCP (e.g. with `telnet`), create an account and a character, and play in a small shared starter zone: they can walk between rooms, talk to each other, and pick up, drop and give items. Everything a player changes is saved and survives reconnects and server restarts.
 
-## Features
+This is an early milestone, not a finished game. The status below says exactly what works; [PROJECT_STATUS.md](PROJECT_STATUS.md) has the detail and [docs/milestone-walkthrough.md](docs/milestone-walkthrough.md) is a recorded two-player session.
 
-### Core Game Systems
-- **Player Management**: Account creation, authentication, and preferences
-- **Character System**: Multiple races (Human, Elf, Dwarf) and classes (Warrior, Rogue, Mage)
-- **Skills & Progression**: Experience-based skill system with leveling mechanics
-- **Item System**: Template-based items with enchantments, durability, and modifications
-- **Command Processing**: Flexible command parser with aliases and validation
-- **Real-time Communication**: Say, tell, whisper, and emote commands
+## What works
 
-### Technical Features
-- **PostgreSQL Integration**: Full persistence with JSONB for complex data
-- **TCP Server**: Multi-client connection handling with session management
-- **Repository Pattern**: Clean separation between business logic and data access
-- **Comprehensive Testing**: 97+ tests with containerized PostgreSQL for integration testing
-- **Container Support**: Docker/Compose and Apple Container workflows for local PostgreSQL and server runs
+- **Accounts and characters**: create an account, then create, select and delete characters (Human, Elf or Dwarf; Warrior, Mage or Rogue). Deleting a character destroys the items it carries.
+- **A persistent starter zone**: nine connected rooms with three starter items. Movement with `north`, `south`, etc.; each character returns to the room they left.
+- **Seeing each other**: `who` lists characters online; `look` shows the room, who else is there, and what's lying around. Logging in again replaces your earlier session.
+- **Talking**: `say` and `emote` reach everyone in your room; `tell` reaches one character anywhere.
+- **Items**: `inventory`, `get`/`take`, `drop` and `give <item> <character>`, with targets like `sword` or `2.sword`. Simultaneous grabs can't duplicate an item.
+- **Sessions**: `quit`, dropped connections and 30-minute idle timeouts clean up properly; SIGINT/SIGTERM shut down gracefully.
+- **Storage**: PostgreSQL with versioned migrations applied automatically at startup.
+
+## Not available yet
+
+These commands are recognised but answer "isn't available yet": `yell`, `whisper`, `chat`, `wear`, `remove`, `kill`, `flee`, `defend`, `cast`, `prepare`, `examine`, `look <thing>`, `time`, `weather`, `skills`, `practice`, `smile`, `wave` and `bow`. Equipment, combat, NPCs, progression, spells, quests, guilds, PvP, crafting, a web client and running more than one server process are all future work.
 
 ## Quick Start
 
 ### Prerequisites
-- Go 1.19 or later
+- Go 1.24 or later
 - Docker and Docker Compose (for database tests)
 - Or, on Apple silicon with macOS 26+, [Apple Container](https://github.com/apple/container)
 - PostgreSQL (optional, for local development)
@@ -224,7 +223,9 @@ The PostgreSQL schema includes:
 ## Documentation
 
 - **[TESTING.md](TESTING.md)**: Comprehensive testing guide
-- **[PROJECT_STATUS.md](PROJECT_STATUS.md)**: Detailed project status and achievements
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)**: what works, what's partial, and what's deferred
+- **[docs/milestone-walkthrough.md](docs/milestone-walkthrough.md)**: a recorded two-player session against the real server
+- **[CONTEXT.md](CONTEXT.md)** and **[docs/adr/](docs/adr/)**: domain terms and architecture decisions
 - **Code Documentation**: Inline documentation following Go conventions
 
 ## License
@@ -233,13 +234,7 @@ The PostgreSQL schema includes:
 
 ## Status
 
-🎯 **Current Status**: Core systems complete with comprehensive testing infrastructure
-
-✅ **Completed**: Game engine, persistence layer, command system, TCP server, testing suite  
-🚧 **In Progress**: Additional game content and world building features  
-📋 **Planned**: Web interface, advanced game mechanics, deployment configurations
-
-The project has a solid foundation with 97+ tests, containerized database testing, and production-ready architecture patterns. Ready for additional features or deployment considerations.
+**Milestone 1, a persistent multiplayer starter zone, is complete.** See [What works](#what-works) and [Not available yet](#not-available-yet) above, and [PROJECT_STATUS.md](PROJECT_STATUS.md) for detail. It runs as a single server process; it hasn't been load-tested or hardened for public deployment.
 
 ### World initialization
 
