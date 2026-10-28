@@ -71,6 +71,10 @@ func TestTargetPickCountsMatchesInListOrder(t *testing.T) {
 
 func TestShortDescription(t *testing.T) {
 	registry := NewItemRegistry()
+	// A template with no name falls back to its ID rather than an empty name.
+	if err := registry.RegisterTemplate(&ItemTemplate{ID: "nameless"}); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		item ItemInstance
 		want string
@@ -80,6 +84,7 @@ func TestShortDescription(t *testing.T) {
 		{ItemInstance{TemplateID: "rusty_sword", CustomName: "Iron Key"}, "an Iron Key"},
 		{ItemInstance{TemplateID: "rusty_sword", CustomName: "Traveler's Blade"}, "a Traveler's Blade"},
 		{ItemInstance{}, "an Unknown Item"},
+		{ItemInstance{TemplateID: "nameless"}, "a nameless"},
 	} {
 		if got := registry.ShortDescription(&tc.item); got != tc.want {
 			t.Errorf("ShortDescription(%+v) = %q, want %q", tc.item, got, tc.want)

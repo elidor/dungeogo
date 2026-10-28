@@ -200,7 +200,7 @@ func (ir *ItemRegistry) DisplayName(item *ItemInstance) string {
 	if item.CustomName != "" {
 		return item.CustomName
 	}
-	if template, err := ir.GetTemplate(item.TemplateID); err == nil {
+	if template, err := ir.GetTemplate(item.TemplateID); err == nil && template.Name != "" {
 		return template.Name
 	}
 	if item.TemplateID != "" {

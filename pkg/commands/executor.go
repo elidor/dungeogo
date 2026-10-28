@@ -130,8 +130,7 @@ func (e *Executor) initializeHandlers() {
 
 	// Inventory handlers
 	e.handlers["inventory"] = &InventoryHandler{repoManager: e.repoManager, templates: e.templates}
-	e.handlers["get"] = &GetHandler{world: e.worldActions}
-	e.handlers["drop"] = &DropHandler{world: e.worldActions}
+	// get and drop run only through ExecuteAction, which delivers their room messages.
 	e.handlers["give"] = &GiveHandler{repoManager: e.repoManager}
 	e.handlers["wear"] = &WearHandler{repoManager: e.repoManager}
 	e.handlers["remove"] = &RemoveHandler{repoManager: e.repoManager}
@@ -308,18 +307,6 @@ func (h *InventoryHandler) Execute(cmd *Command) ([]string, error) {
 	}
 
 	return response, nil
-}
-
-type GetHandler struct{ world *actions.World }
-
-func (h *GetHandler) Execute(cmd *Command) ([]string, error) {
-	return h.world.Get(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
-}
-
-type DropHandler struct{ world *actions.World }
-
-func (h *DropHandler) Execute(cmd *Command) ([]string, error) {
-	return h.world.Drop(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
 }
 
 type GiveHandler struct {

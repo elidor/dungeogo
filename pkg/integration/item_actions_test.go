@@ -1,13 +1,19 @@
 package integration
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/elidor/dungeogo/internal/testdb"
+	"github.com/elidor/dungeogo/pkg/game"
 	"github.com/elidor/dungeogo/pkg/game/items"
+	"github.com/elidor/dungeogo/pkg/game/player"
 	"github.com/elidor/dungeogo/pkg/persistence/postgres"
+	"github.com/elidor/dungeogo/pkg/server"
 	"github.com/elidor/dungeogo/pkg/testutil"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // command sends one line and returns the output up to the next prompt.
@@ -161,4 +167,50 @@ func TestItemActions_CompetingPickupsExactlyOneWins(t *testing.T) {
 			t.Fatalf("round %d: gem owner %+v %v", round, item, err)
 		}
 	}
+}
+
+func TestItemActions_OwnershipSurvivesServerRestart(t *testing.T) {
+	_, url := testdb.New(t, true)
+	manager, err := postgres.NewPostgreSQLRepositoryManager(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte("testpass123"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := player.NewPlayer("restarter", "restarter@example.com", string(hash))
+	if err := manager.Players().CreatePlayer(p); err != nil {
+		t.Fatal(err)
+	}
+	id := createPresenceCharacter(t, manager, p, "Restarter")
+	actor := openLocationSession(t, server.NewSessionHandler(manager, game.NewEngine(manager)))
+	actor.login(p)
+	actor.selectCharacter()
+	assertContains(t, command(actor, "get sword"), "You pick up a Training Sword.")
+	assertContains(t, command(actor, "get lantern"), "You pick up a Travel Lantern.")
+	assertContains(t, command(actor, "drop lantern"), "You drop a Travel Lantern.")
+	actor.disconnect()
+	if err := manager.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	manager, err = postgres.NewPostgreSQLRepositoryManager(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { manager.Close() })
+	if err := manager.Bootstrap(context.Background(), "starting_room"); err != nil {
+		t.Fatal(err)
+	}
+	resumed := openLocationSession(t, server.NewSessionHandler(manager, game.NewEngine(manager)))
+	resumed.login(p)
+	out := resumed.selectCharacter()
+	assertItemLines(t, out, []string{"Travel Lantern"})
+	if strings.Contains(out, "Training Sword") {
+		t.Fatalf("restart put the picked-up sword back in the room: %q", out)
+	}
+	assertItemLines(t, command(resumed, "inventory"), []string{"Training Sword"})
+	assertOwner(t, manager, starterItemSword, items.CharacterOwner(id))
+	assertOwner(t, manager, starterItemLantern, items.RoomOwner("starting_room"))
 }

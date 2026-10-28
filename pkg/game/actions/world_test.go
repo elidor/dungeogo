@@ -109,3 +109,39 @@ func TestGetReportsLostRaceWithoutRoomMessage(t *testing.T) {
 		}
 	}
 }
+
+// failingTransfer lists the Item but the storage write fails.
+type failingTransfer struct{ raceLostItems }
+
+func (failingTransfer) TransferItem(string, items.Owner, items.Owner) (bool, error) {
+	return false, errors.New("disk full")
+}
+
+type failingTransferRepos struct{ raceLostRepos }
+
+func (r failingTransferRepos) Items() interfaces.ItemRepository {
+	return failingTransfer{raceLostItems{item: r.item}}
+}
+
+func TestGetStorageFailureChangesNothingAndIsLogged(t *testing.T) {
+	repos := failingTransferRepos{raceLostRepos{
+		actor: &character.Character{ID: "c1", Name: "Ana", Location: &character.Location{RoomID: "r1", ZoneID: "z"}},
+		room:  &world.Room{ID: "r1", ZoneID: "z"},
+		item:  &items.ItemInstance{ID: "i1", TemplateID: "smooth_stone"},
+	}}
+	service := NewWorld(repos, items.NewItemRegistry())
+	var logged bytes.Buffer
+	service.logger = log.New(&logged, "", 0)
+	result := service.Get("c1", "stone")
+	if got := strings.Join(result.Replies("c1"), "\n"); got != "You can't pick anything up right now." {
+		t.Fatalf("reply = %q", got)
+	}
+	for _, m := range result.Messages {
+		if m.Scope == world.ToRoom {
+			t.Fatalf("failed transfer announced to the room: %+v", m)
+		}
+	}
+	if !strings.Contains(logged.String(), "i1") || !strings.Contains(logged.String(), "disk full") {
+		t.Fatalf("log %q should name the item and the error", logged.String())
+	}
+}

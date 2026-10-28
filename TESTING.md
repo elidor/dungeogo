@@ -295,7 +295,10 @@ moving rooms, and inventory after reconnecting.
 `TestItemActions_CompetingPickupsExactlyOneWins` has two clients send `get gem`
 for the same item simultaneously, ten times; exactly one wins each round and the
 other gets a clear refusal. `TestGetReportsLostRaceWithoutRoomMessage` covers the
-reply when another writer moves the item between listing and transfer.
+reply when another writer moves the item between listing and transfer, and
+`TestGetStorageFailureChangesNothingAndIsLogged` a failed write: no room message,
+a logged item ID. `TestItemActions_OwnershipSurvivesServerRestart` restarts the
+repository and session handler and checks room and inventory ownership.
 `TestOwnedItemsListInArrivalOrder` checks that an item which leaves and returns
 is listed last (migration `008_item_arrival_order.sql`).
 
