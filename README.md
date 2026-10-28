@@ -327,6 +327,17 @@ other rooms see nothing. If two players grab the same item at once, exactly one
 gets it; the other is told it isn't there any more. Ownership changes are durable
 and survive reconnects and restarts.
 
+### Disconnects, idle sessions and shutdown
+
+A session ends on `quit`, when the connection drops, or after 30 minutes without
+input; in each case the character leaves `who` and room presence, without
+disturbing a newer session that replaced it. Writes to a client time out after
+five seconds, and a client whose write fails is disconnected, so one stalled
+connection can't hold up everyone else. On SIGINT or SIGTERM the server stops
+accepting connections, closes every session, waits up to 15 seconds for commands
+already running to finish, closes the database, and exits nonzero if any of that
+fails.
+
 ### Giving items
 
 `give <item> <character>` hands something you carry to another character in the
