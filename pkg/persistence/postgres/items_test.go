@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/elidor/dungeogo/internal/testdb"
 	"github.com/elidor/dungeogo/pkg/game/items"
 )
 
@@ -363,5 +364,54 @@ func TestItemRepository_GetRoomItems(t *testing.T) {
 		if item.Owner.ID != roomID {
 			t.Errorf("Expected item to belong to room %s, got %s", roomID, item.Owner.ID)
 		}
+	}
+}
+
+// TestItemRepository_CreateAndUpdateShareSaveSteps checks the fields both
+// writes prepare the same way: JSON columns, nullable last_used, and owner.
+func TestItemRepository_CreateAndUpdateShareSaveSteps(t *testing.T) {
+	_, url := testdb.New(t, true)
+	manager, err := NewPostgreSQLRepositoryManager(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	repo := manager.Items()
+
+	item := createTestItemInstance()
+	item.LastUsed = time.Now().UTC().Truncate(time.Microsecond)
+	item.Modifications["sharpened"] = true
+	item.Enchantments = []items.Enchantment{{ID: "e1", Name: "Keen", Type: items.EnchantmentDamage, Power: 2}}
+	if err := repo.CreateItemInstance(item); err != nil {
+		t.Fatal(err)
+	}
+	created, err := repo.GetItemInstance(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created.LastUsed.Equal(item.LastUsed) || created.Modifications["sharpened"] != true || len(created.Enchantments) != 1 || created.Owner != items.RoomOwner("newbie_west") {
+		t.Fatalf("create did not store prepared fields: %+v", created)
+	}
+
+	created.LastUsed = time.Time{}
+	created.Modifications = map[string]interface{}{"dulled": true}
+	created.Enchantments = []items.Enchantment{}
+	created.Owner = items.Owner{ID: "newbie_east"}
+	if err := repo.UpdateItemInstance(created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Owner != items.RoomOwner("newbie_east") {
+		t.Fatalf("update did not resolve owner: %v", created.Owner)
+	}
+	updated, err := repo.GetItemInstance(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lastUsedIsNull bool
+	if err := manager.GetDB().QueryRow(`SELECT last_used IS NULL FROM item_instances WHERE id=$1`, item.ID).Scan(&lastUsedIsNull); err != nil {
+		t.Fatal(err)
+	}
+	if !lastUsedIsNull || !updated.LastUsed.IsZero() || updated.Modifications["dulled"] != true || len(updated.Enchantments) != 0 || updated.Owner != items.RoomOwner("newbie_east") {
+		t.Fatalf("update did not store prepared fields: %+v (last_used null=%v)", updated, lastUsedIsNull)
 	}
 }
