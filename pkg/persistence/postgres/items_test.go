@@ -35,8 +35,8 @@ func TestItemRepository_CreateItemInstance(t *testing.T) {
 		t.Errorf("Expected template ID %s, got %s", testItem.TemplateID, retrieved.TemplateID)
 	}
 
-	if retrieved.OwnerID != testItem.OwnerID {
-		t.Errorf("Expected owner ID %s, got %s", testItem.OwnerID, retrieved.OwnerID)
+	if retrieved.Owner.ID != testItem.Owner.ID {
+		t.Errorf("Expected owner ID %s, got %s", testItem.Owner.ID, retrieved.Owner.ID)
 	}
 
 	if retrieved.Quantity != testItem.Quantity {
@@ -108,16 +108,16 @@ func TestItemRepository_GetPlayerItems(t *testing.T) {
 
 	// Create multiple items for the player
 	item1 := createTestItemInstance()
-	item1.OwnerID = playerID
+	item1.Owner = items.Owner{ID: playerID}
 	item1.TemplateID = "sword"
 
 	item2 := createTestItemInstance()
-	item2.OwnerID = playerID
+	item2.Owner = items.Owner{ID: playerID}
 	item2.TemplateID = "potion"
 	item2.Quantity = 5
 
 	item3 := createTestItemInstance()
-	item3.OwnerID = "newbie_west"
+	item3.Owner = items.Owner{ID: "newbie_west"}
 	item3.TemplateID = "armor"
 
 	// Create all items
@@ -176,7 +176,7 @@ func TestItemRepository_TransferItem(t *testing.T) {
 
 	// Create item for original owner
 	testItem := createTestItemInstance()
-	testItem.OwnerID = originalOwner
+	testItem.Owner = items.Owner{ID: originalOwner}
 
 	err := repo.CreateItemInstance(testItem)
 	if err != nil {
@@ -195,8 +195,8 @@ func TestItemRepository_TransferItem(t *testing.T) {
 		t.Fatalf("Failed to retrieve transferred item: %v", err)
 	}
 
-	if retrieved.OwnerID != newOwner {
-		t.Errorf("Expected new owner %s, got %s", newOwner, retrieved.OwnerID)
+	if retrieved.Owner.ID != newOwner {
+		t.Errorf("Expected new owner %s, got %s", newOwner, retrieved.Owner.ID)
 	}
 
 	// Verify original owner no longer has the item
@@ -331,11 +331,11 @@ func TestItemRepository_GetRoomItems(t *testing.T) {
 
 	// Create items in room
 	item1 := createTestItemInstance()
-	item1.OwnerID = roomID
+	item1.Owner = items.Owner{ID: roomID}
 	item1.TemplateID = "dropped_gold"
 
 	item2 := createTestItemInstance()
-	item2.OwnerID = roomID
+	item2.Owner = items.Owner{ID: roomID}
 	item2.TemplateID = "abandoned_sword"
 
 	err := repo.CreateItemInstance(item1)
@@ -360,8 +360,8 @@ func TestItemRepository_GetRoomItems(t *testing.T) {
 
 	// Verify items belong to room
 	for _, item := range roomItems {
-		if item.OwnerID != roomID {
-			t.Errorf("Expected item to belong to room %s, got %s", roomID, item.OwnerID)
+		if item.Owner.ID != roomID {
+			t.Errorf("Expected item to belong to room %s, got %s", roomID, item.Owner.ID)
 		}
 	}
 }

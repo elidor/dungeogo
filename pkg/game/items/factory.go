@@ -15,7 +15,7 @@ func NewItemFactory() *ItemFactory {
 	}
 }
 
-func (f *ItemFactory) CreateInstance(templateID, ownerID string, quantity int) (*ItemInstance, error) {
+func (f *ItemFactory) CreateInstance(templateID string, owner Owner, quantity int) (*ItemInstance, error) {
 	template, err := f.registry.GetTemplate(templateID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create item instance: %w", err)
@@ -37,7 +37,7 @@ func (f *ItemFactory) CreateInstance(templateID, ownerID string, quantity int) (
 	instance := &ItemInstance{
 		ID:           generateItemID(),
 		TemplateID:   templateID,
-		OwnerID:      ownerID,
+		Owner:        owner,
 		Quantity:     quantity,
 		Durability:   template.Durability,
 		Enchantments: []Enchantment{},
@@ -63,8 +63,8 @@ func (f *ItemFactory) RegisterTemplate(template *ItemTemplate) error {
 	return f.registry.RegisterTemplate(template)
 }
 
-func (f *ItemFactory) CreateEnchantedInstance(templateID, ownerID string, enchantments []Enchantment) (*ItemInstance, error) {
-	instance, err := f.CreateInstance(templateID, ownerID, 1)
+func (f *ItemFactory) CreateEnchantedInstance(templateID string, owner Owner, enchantments []Enchantment) (*ItemInstance, error) {
+	instance, err := f.CreateInstance(templateID, owner, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -85,8 +85,8 @@ func (f *ItemFactory) CreateEnchantedInstance(templateID, ownerID string, enchan
 	return instance, nil
 }
 
-func (f *ItemFactory) CreateCustomInstance(templateID, ownerID, customName string) (*ItemInstance, error) {
-	instance, err := f.CreateInstance(templateID, ownerID, 1)
+func (f *ItemFactory) CreateCustomInstance(templateID string, owner Owner, customName string) (*ItemInstance, error) {
+	instance, err := f.CreateInstance(templateID, owner, 1)
 	if err != nil {
 		return nil, err
 	}

@@ -6,18 +6,10 @@ import (
 	"time"
 )
 
-type OwnerKind string
-
-const (
-	OwnerRoom      OwnerKind = "room"
-	OwnerCharacter OwnerKind = "character"
-)
-
 type ItemInstance struct {
-	OwnerKind     OwnerKind
 	ID            string
 	TemplateID    string
-	OwnerID       string
+	Owner         Owner
 	Quantity      int
 	Durability    int
 	Enchantments  []Enchantment
@@ -47,10 +39,10 @@ const (
 	EnchantmentSpecial
 )
 
-func NewItemInstance(templateID, ownerID string, quantity int) *ItemInstance {
+func NewItemInstance(templateID string, owner Owner, quantity int) *ItemInstance {
 	return &ItemInstance{
 		TemplateID:    templateID,
-		OwnerID:       ownerID,
+		Owner:         owner,
 		Quantity:      quantity,
 		Durability:    100, // Will be set from template
 		Enchantments:  []Enchantment{},

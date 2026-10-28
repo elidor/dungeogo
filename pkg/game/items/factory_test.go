@@ -20,7 +20,7 @@ func TestCreateInstance(t *testing.T) {
 	factory := NewItemFactory()
 	
 	// Test creating a valid item
-	instance, err := factory.CreateInstance("rusty_sword", "player123", 1)
+	instance, err := factory.CreateInstance("rusty_sword", CharacterOwner("player123"), 1)
 	if err != nil {
 		t.Fatalf("Expected no error creating valid item, got: %v", err)
 	}
@@ -33,8 +33,8 @@ func TestCreateInstance(t *testing.T) {
 		t.Errorf("Expected template ID 'rusty_sword', got %s", instance.TemplateID)
 	}
 	
-	if instance.OwnerID != "player123" {
-		t.Errorf("Expected owner ID 'player123', got %s", instance.OwnerID)
+	if instance.Owner.ID != "player123" {
+		t.Errorf("Expected owner ID 'player123', got %s", instance.Owner.ID)
 	}
 	
 	if instance.Quantity != 1 {
@@ -51,7 +51,7 @@ func TestCreateInstanceInvalidTemplate(t *testing.T) {
 	factory := NewItemFactory()
 	
 	// Test creating item with invalid template
-	instance, err := factory.CreateInstance("nonexistent_item", "player123", 1)
+	instance, err := factory.CreateInstance("nonexistent_item", CharacterOwner("player123"), 1)
 	if err == nil {
 		t.Errorf("Expected error for nonexistent template")
 	}
@@ -65,7 +65,7 @@ func TestCreateInstanceQuantityValidation(t *testing.T) {
 	factory := NewItemFactory()
 	
 	// Test zero quantity (should default to 1)
-	instance, err := factory.CreateInstance("rusty_sword", "player123", 0)
+	instance, err := factory.CreateInstance("rusty_sword", CharacterOwner("player123"), 0)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestCreateInstanceQuantityValidation(t *testing.T) {
 	}
 	
 	// Test negative quantity (should default to 1)
-	instance, err = factory.CreateInstance("rusty_sword", "player123", -5)
+	instance, err = factory.CreateInstance("rusty_sword", CharacterOwner("player123"), -5)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestCreateInstanceStackableItems(t *testing.T) {
 	factory := NewItemFactory()
 	
 	// Test creating stackable item (health potion has stack size 10)
-	instance, err := factory.CreateInstance("health_potion", "player123", 5)
+	instance, err := factory.CreateInstance("health_potion", CharacterOwner("player123"), 5)
 	if err != nil {
 		t.Fatalf("Unexpected error creating stackable item: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestCreateInstanceStackableItems(t *testing.T) {
 	}
 	
 	// Test creating too many of a stackable item
-	instance, err = factory.CreateInstance("health_potion", "player123", 15)
+	instance, err = factory.CreateInstance("health_potion", CharacterOwner("player123"), 15)
 	if err == nil {
 		t.Errorf("Expected error for quantity exceeding stack size")
 	}
@@ -113,7 +113,7 @@ func TestCreateInstanceNonStackableItems(t *testing.T) {
 	factory := NewItemFactory()
 	
 	// Test creating multiple non-stackable items (should fail)
-	instance, err := factory.CreateInstance("rusty_sword", "player123", 2)
+	instance, err := factory.CreateInstance("rusty_sword", CharacterOwner("player123"), 2)
 	if err == nil {
 		t.Errorf("Expected error for multiple non-stackable items")
 	}
@@ -132,7 +132,7 @@ func TestCreateInstanceDurabilityFromTemplate(t *testing.T) {
 		t.Fatalf("Failed to get template: %v", err)
 	}
 	
-	instance, err := factory.CreateInstance("rusty_sword", "player123", 1)
+	instance, err := factory.CreateInstance("rusty_sword", CharacterOwner("player123"), 1)
 	if err != nil {
 		t.Fatalf("Failed to create instance: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestCreateEnchantedInstance(t *testing.T) {
 	}
 	
 	// Create enchanted instance
-	instance, err := factory.CreateEnchantedInstance("rusty_sword", "player123", enchantments)
+	instance, err := factory.CreateEnchantedInstance("rusty_sword", CharacterOwner("player123"), enchantments)
 	if err != nil {
 		t.Fatalf("Unexpected error creating enchanted instance: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestCreateEnchantedInstance(t *testing.T) {
 	nonEnchantableTemplate.Enchantable = false
 	factory.RegisterTemplate(nonEnchantableTemplate)
 	
-	instance, err = factory.CreateEnchantedInstance("basic_material", "player123", enchantments)
+	instance, err = factory.CreateEnchantedInstance("basic_material", CharacterOwner("player123"), enchantments)
 	if err == nil {
 		t.Errorf("Expected error enchanting non-enchantable item")
 	}
@@ -308,7 +308,7 @@ func TestCreateCustomInstance(t *testing.T) {
 	factory := NewItemFactory()
 	
 	customName := "Legendary Blade of Testing"
-	instance, err := factory.CreateCustomInstance("rusty_sword", "player123", customName)
+	instance, err := factory.CreateCustomInstance("rusty_sword", CharacterOwner("player123"), customName)
 	if err != nil {
 		t.Fatalf("Unexpected error creating custom instance: %v", err)
 	}

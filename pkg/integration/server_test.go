@@ -787,8 +787,8 @@ func createTestCharacter(playerID string) *character.Character {
 	return char
 }
 
-func createTestItemInstance(templateID, ownerID string) *items.ItemInstance {
-	item := testutil.CreateTestItemInstance(templateID, ownerID)
+func createTestItemInstance(templateID, characterID string) *items.ItemInstance {
+	item := testutil.CreateTestItemInstance(templateID, items.CharacterOwner(characterID))
 	item.ID = generateTestUUID()
 	return item
 }

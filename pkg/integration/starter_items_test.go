@@ -61,7 +61,7 @@ func TestStarterItems_RoomInventoryAndServerRestart(t *testing.T) {
 	if err := manager.Items().UpdateItemInstance(sword); err != nil {
 		t.Fatal(err)
 	}
-	armor := testutil.CreateTestItemInstance("leather_armor", id)
+	armor := testutil.CreateTestItemInstance("leather_armor", items.CharacterOwner(id))
 	if err := manager.Items().CreateItemInstance(armor); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestStarterItems_RoomInventoryAndServerRestart(t *testing.T) {
 		t.Fatalf("restart lost inventory: %q", out)
 	}
 	saved, err := manager.Items().GetItemInstance(starterItemSword)
-	if err != nil || saved.OwnerKind != items.OwnerCharacter || saved.OwnerID != id {
+	if err != nil || saved.Owner.Kind != items.OwnerCharacter || saved.Owner.ID != id {
 		t.Fatalf("restart ownership: %+v %v", saved, err)
 	}
 	resumed.send("north")
