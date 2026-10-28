@@ -309,7 +309,7 @@ func TestServerIntegration_ItemManagement(t *testing.T) {
 	}
 
 	// Test item transfer
-	roomID := "test_room_123"
+	roomID := "newbie_east"
 	err = repoManager.Items().TransferItem(item1.ID, roomID)
 	if err != nil {
 		t.Fatalf("Failed to transfer item: %v", err)

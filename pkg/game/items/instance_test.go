@@ -54,12 +54,12 @@ func TestNewItemInstance(t *testing.T) {
 }
 
 func TestGetDisplayName(t *testing.T) {
-	instance := NewItemInstance("sword", "player1", 1)
+	instance := NewItemInstance("rusty_sword", "player1", 1)
 	
 	// Test default display name
 	displayName := instance.GetDisplayName()
-	if displayName != "Unknown Item" {
-		t.Errorf("Expected default display name 'Unknown Item', got %s", displayName)
+	if displayName != "Rusty Sword" {
+		t.Errorf("Expected default display name 'Rusty Sword', got %s", displayName)
 	}
 	
 	// Test custom name
