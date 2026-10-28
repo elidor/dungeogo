@@ -299,20 +299,20 @@ func TestServerIntegration_ItemManagement(t *testing.T) {
 	}
 
 	// Test item retrieval
-	items, err := repoManager.Items().GetPlayerItems(testChar.ID)
+	held, err := repoManager.Items().GetPlayerItems(testChar.ID)
 	if err != nil {
 		t.Fatalf("Failed to get player items: %v", err)
 	}
 
-	if len(items) != 2 {
-		t.Errorf("Expected 2 items, got %d", len(items))
+	if len(held) != 2 {
+		t.Errorf("Expected 2 items, got %d", len(held))
 	}
 
 	// Test item transfer
 	roomID := "newbie_east"
-	err = repoManager.Items().TransferItem(item1.ID, roomID)
-	if err != nil {
-		t.Fatalf("Failed to transfer item: %v", err)
+	moved, err := repoManager.Items().TransferItem(item1.ID, items.CharacterOwner(testChar.ID), items.RoomOwner(roomID))
+	if err != nil || !moved {
+		t.Fatalf("Failed to transfer item: moved=%v err=%v", moved, err)
 	}
 
 	// Verify transfer

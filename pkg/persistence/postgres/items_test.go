@@ -109,16 +109,16 @@ func TestItemRepository_GetPlayerItems(t *testing.T) {
 
 	// Create multiple items for the player
 	item1 := createTestItemInstance()
-	item1.Owner = items.Owner{ID: playerID}
+	item1.Owner = items.CharacterOwner(playerID)
 	item1.TemplateID = "sword"
 
 	item2 := createTestItemInstance()
-	item2.Owner = items.Owner{ID: playerID}
+	item2.Owner = items.CharacterOwner(playerID)
 	item2.TemplateID = "potion"
 	item2.Quantity = 5
 
 	item3 := createTestItemInstance()
-	item3.Owner = items.Owner{ID: "newbie_west"}
+	item3.Owner = items.RoomOwner("newbie_west")
 	item3.TemplateID = "armor"
 
 	// Create all items
@@ -177,7 +177,7 @@ func TestItemRepository_TransferItem(t *testing.T) {
 
 	// Create item for original owner
 	testItem := createTestItemInstance()
-	testItem.Owner = items.Owner{ID: originalOwner}
+	testItem.Owner = items.CharacterOwner(originalOwner)
 
 	err := repo.CreateItemInstance(testItem)
 	if err != nil {
@@ -185,9 +185,9 @@ func TestItemRepository_TransferItem(t *testing.T) {
 	}
 
 	// Transfer item
-	err = repo.TransferItem(testItem.ID, newOwner)
-	if err != nil {
-		t.Fatalf("Failed to transfer item: %v", err)
+	moved, err := repo.TransferItem(testItem.ID, items.CharacterOwner(originalOwner), items.CharacterOwner(newOwner))
+	if err != nil || !moved {
+		t.Fatalf("Failed to transfer item: moved=%v err=%v", moved, err)
 	}
 
 	// Verify transfer
@@ -332,11 +332,11 @@ func TestItemRepository_GetRoomItems(t *testing.T) {
 
 	// Create items in room
 	item1 := createTestItemInstance()
-	item1.Owner = items.Owner{ID: roomID}
+	item1.Owner = items.RoomOwner(roomID)
 	item1.TemplateID = "dropped_gold"
 
 	item2 := createTestItemInstance()
-	item2.Owner = items.Owner{ID: roomID}
+	item2.Owner = items.RoomOwner(roomID)
 	item2.TemplateID = "abandoned_sword"
 
 	err := repo.CreateItemInstance(item1)
@@ -396,12 +396,9 @@ func TestItemRepository_CreateAndUpdateShareSaveSteps(t *testing.T) {
 	created.LastUsed = time.Time{}
 	created.Modifications = map[string]interface{}{"dulled": true}
 	created.Enchantments = []items.Enchantment{}
-	created.Owner = items.Owner{ID: "newbie_east"}
+	created.Owner = items.RoomOwner("newbie_east") // a stale or edited copy must not move the Item
 	if err := repo.UpdateItemInstance(created); err != nil {
 		t.Fatal(err)
-	}
-	if created.Owner != items.RoomOwner("newbie_east") {
-		t.Fatalf("update did not resolve owner: %v", created.Owner)
 	}
 	updated, err := repo.GetItemInstance(item.ID)
 	if err != nil {
@@ -411,7 +408,7 @@ func TestItemRepository_CreateAndUpdateShareSaveSteps(t *testing.T) {
 	if err := manager.GetDB().QueryRow(`SELECT last_used IS NULL FROM item_instances WHERE id=$1`, item.ID).Scan(&lastUsedIsNull); err != nil {
 		t.Fatal(err)
 	}
-	if !lastUsedIsNull || !updated.LastUsed.IsZero() || updated.Modifications["dulled"] != true || len(updated.Enchantments) != 0 || updated.Owner != items.RoomOwner("newbie_east") {
+	if !lastUsedIsNull || !updated.LastUsed.IsZero() || updated.Modifications["dulled"] != true || len(updated.Enchantments) != 0 || updated.Owner != items.RoomOwner("newbie_west") {
 		t.Fatalf("update did not store prepared fields: %+v (last_used null=%v)", updated, lastUsedIsNull)
 	}
 }

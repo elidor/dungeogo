@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/elidor/dungeogo/internal/testdb"
@@ -29,8 +30,8 @@ func TestStarterItemsPersistAcrossRepeatedBootAndRepositoryRestart(t *testing.T)
 		}
 	}
 	owner := existingItemCharacter(t, manager)
-	if err := manager.Items().TransferItem(starterSword, owner); err != nil {
-		t.Fatal(err)
+	if moved, err := manager.Items().TransferItem(starterSword, items.RoomOwner("starting_room"), items.CharacterOwner(owner)); err != nil || !moved {
+		t.Fatalf("transfer starter sword: moved=%v err=%v", moved, err)
 	}
 	if err := manager.Items().DeleteItemInstance(starterLantern); err != nil {
 		t.Fatal(err)
@@ -69,11 +70,9 @@ func TestItemOwnershipConstraintsAndKindIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	roomItem := createTestItemInstance()
-	roomItem.Owner = items.Owner{ID: id}
-	roomItem.Owner.Kind = items.OwnerRoom
+	roomItem.Owner = items.RoomOwner(id)
 	charItem := createTestItemInstance()
-	charItem.Owner = items.Owner{ID: id}
-	charItem.Owner.Kind = items.OwnerCharacter
+	charItem.Owner = items.CharacterOwner(id)
 	for _, item := range []*items.ItemInstance{roomItem, charItem} {
 		if err := manager.Items().CreateItemInstance(item); err != nil {
 			t.Fatal(err)
@@ -90,7 +89,7 @@ func TestItemOwnershipConstraintsAndKindIsolation(t *testing.T) {
 	ambiguous := createTestItemInstance()
 	ambiguous.Owner = items.Owner{ID: id}
 	if err := manager.Items().CreateItemInstance(ambiguous); err == nil {
-		t.Fatal("legacy API guessed ambiguous ownership")
+		t.Fatal("created item whose owner kind was left to guesswork")
 	}
 	for _, tc := range []struct{ kind, owner string }{
 		{"room", "missing_room"}, {"character", "00000000-0000-0000-0000-000000000099"}, {"character", "not-a-uuid"}, {"unknown", "starting_room"},
@@ -105,7 +104,7 @@ func TestItemOwnershipConstraintsAndKindIsolation(t *testing.T) {
 	if _, err := manager.GetDB().Exec(`DELETE FROM room_definitions WHERE room_id=$1`, id); err == nil {
 		t.Fatal("deleted room while retaining owned item")
 	}
-	if err := manager.Items().TransferItem(charItem.ID, "missing_room"); err == nil {
+	if _, err := manager.Items().TransferItem(charItem.ID, items.CharacterOwner(id), items.RoomOwner("missing_room")); err == nil {
 		t.Fatal("transferred to nonexistent owner")
 	}
 	unchanged, err := manager.Items().GetItemInstance(charItem.ID)
@@ -114,47 +113,111 @@ func TestItemOwnershipConstraintsAndKindIsolation(t *testing.T) {
 	}
 }
 
-func TestItemOwnerResolution(t *testing.T) {
-	_, url := testdb.New(t, true)
-	manager, err := NewPostgreSQLRepositoryManager(url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer manager.Close()
+func TestItemOwnerMustBeExplicit(t *testing.T) {
+	manager := setupTestDB(t)
 	character := existingItemCharacter(t, manager)
+	for _, owner := range []items.Owner{items.RoomOwner("newbie_east"), items.CharacterOwner(character)} {
+		item := createTestItemInstance()
+		item.Owner = owner
+		if err := manager.Items().CreateItemInstance(item); err != nil {
+			t.Fatalf("create with %v: %v", owner, err)
+		}
+		if stored, err := manager.Items().GetItemInstance(item.ID); err != nil || stored.Owner != owner {
+			t.Fatalf("stored owner = %+v %v, want %v", stored, err, owner)
+		}
+	}
+	for _, owner := range []items.Owner{{ID: "newbie_west"}, {ID: character}, {Kind: "npc", ID: "newbie_west"}, {Kind: items.OwnerRoom}} {
+		item := createTestItemInstance()
+		item.Owner = owner
+		if err := manager.Items().CreateItemInstance(item); err == nil {
+			t.Fatalf("created item with %v", owner)
+		}
+		if _, err := manager.Items().GetItemInstance(item.ID); err == nil {
+			t.Fatalf("item with %v was written", owner)
+		}
+		if _, err := manager.Items().TransferItem(starterSword, items.RoomOwner("starting_room"), owner); err == nil {
+			t.Fatalf("transferred to %v", owner)
+		}
+		if _, err := manager.Items().TransferItem(starterSword, owner, items.RoomOwner("newbie_west")); err == nil {
+			t.Fatalf("transferred from %v", owner)
+		}
+	}
+}
 
-	for _, tc := range []struct {
-		name  string
-		given items.Owner
-		want  items.Owner
-	}{
-		{"room kind inferred from ID", items.Owner{ID: "newbie_west"}, items.RoomOwner("newbie_west")},
-		{"character kind inferred from ID", items.Owner{ID: character}, items.CharacterOwner(character)},
-		{"explicit room kept", items.RoomOwner("newbie_east"), items.RoomOwner("newbie_east")},
-		{"explicit character kept", items.CharacterOwner(character), items.CharacterOwner(character)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			item := createTestItemInstance()
-			item.Owner = tc.given
-			if err := manager.Items().CreateItemInstance(item); err != nil {
+func TestTransferItemOnlyFromExpectedOwner(t *testing.T) {
+	manager := setupTestDB(t)
+	character := existingItemCharacter(t, manager)
+	repo := manager.Items()
+	start, carried := items.RoomOwner("starting_room"), items.CharacterOwner(character)
+
+	if moved, err := repo.TransferItem(starterSword, items.RoomOwner("newbie_west"), carried); err != nil || moved {
+		t.Fatalf("transfer from wrong owner: moved=%v err=%v", moved, err)
+	}
+	if moved, err := repo.TransferItem("90000000-0000-4000-8000-0000000000ff", start, carried); err != nil || moved {
+		t.Fatalf("transfer of missing item: moved=%v err=%v", moved, err)
+	}
+	if item, err := repo.GetItemInstance(starterSword); err != nil || item.Owner != start {
+		t.Fatalf("failed transfers changed ownership: %+v %v", item, err)
+	}
+	if moved, err := repo.TransferItem(starterSword, start, carried); err != nil || !moved {
+		t.Fatalf("transfer from expected owner: moved=%v err=%v", moved, err)
+	}
+	// A second mover still holding the old view of the sword loses.
+	if moved, err := repo.TransferItem(starterSword, start, items.RoomOwner("newbie_west")); err != nil || moved {
+		t.Fatalf("stale transfer: moved=%v err=%v", moved, err)
+	}
+	if item, err := repo.GetItemInstance(starterSword); err != nil || item.Owner != carried {
+		t.Fatalf("owner after stale transfer = %+v %v, want %v", item, err, carried)
+	}
+}
+
+func TestCompetingTransfersExactlyOneWins(t *testing.T) {
+	manager := setupTestDB(t)
+	repo := manager.Items()
+	start := items.RoomOwner("starting_room")
+	for round := 0; round < 20; round++ {
+		contenders := []items.Owner{items.CharacterOwner(existingItemCharacter(t, manager)), items.CharacterOwner(existingItemCharacter(t, manager))}
+		results := make(chan bool, len(contenders))
+		errs := make(chan error, len(contenders))
+		var ready, done sync.WaitGroup
+		release := make(chan struct{})
+		for _, to := range contenders {
+			ready.Add(1)
+			done.Add(1)
+			go func(to items.Owner) {
+				defer done.Done()
+				ready.Done()
+				<-release
+				moved, err := repo.TransferItem(starterSword, start, to)
+				results <- moved
+				errs <- err
+			}(to)
+		}
+		ready.Wait()
+		close(release)
+		done.Wait()
+		close(results)
+		close(errs)
+		for err := range errs {
+			if err != nil {
 				t.Fatal(err)
 			}
-			if item.Owner != tc.want {
-				t.Fatalf("created owner = %v, want %v", item.Owner, tc.want)
+		}
+		winners := 0
+		for moved := range results {
+			if moved {
+				winners++
 			}
-			stored, err := manager.Items().GetItemInstance(item.ID)
-			if err != nil || stored.Owner != tc.want {
-				t.Fatalf("stored owner = %+v %v, want %v", stored, err, tc.want)
-			}
-		})
-	}
-
-	invalid := createTestItemInstance()
-	invalid.Owner = items.Owner{Kind: "npc", ID: "newbie_west"}
-	if err := manager.Items().CreateItemInstance(invalid); err == nil {
-		t.Fatal("created item with invalid owner kind")
-	}
-	if _, err := manager.Items().GetItemInstance(invalid.ID); err == nil {
-		t.Fatal("invalid owner kind was written")
+		}
+		if winners != 1 {
+			t.Fatalf("round %d: %d transfers won, want exactly 1", round, winners)
+		}
+		item, err := repo.GetItemInstance(starterSword)
+		if err != nil || (item.Owner != contenders[0] && item.Owner != contenders[1]) {
+			t.Fatalf("round %d: sword owner = %+v %v", round, item, err)
+		}
+		if moved, err := repo.TransferItem(starterSword, item.Owner, start); err != nil || !moved {
+			t.Fatalf("round %d: reset: moved=%v err=%v", round, moved, err)
+		}
 	}
 }
