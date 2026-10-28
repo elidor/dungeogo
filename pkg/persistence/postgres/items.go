@@ -67,7 +67,7 @@ func (r *ItemRepository) CreateItemInstance(item *items.ItemInstance) error {
 	return nil
 }
 
-const itemColumns = `id,template_id,owner_kind,owner_id,quantity,durability,enchantments,COALESCE(custom_name,''),modifications,created_at,last_used`
+const itemColumns = `id,template_id,owner_kind,owner_id,quantity,durability,enchantments,COALESCE(custom_name,''),modifications,created_at,last_used,held_since`
 
 type itemScanner interface{ Scan(...interface{}) error }
 
@@ -75,7 +75,7 @@ func scanItem(row itemScanner) (*items.ItemInstance, error) {
 	item := &items.ItemInstance{}
 	var enchantments, modifications []byte
 	var lastUsed sql.NullTime
-	if err := row.Scan(&item.ID, &item.TemplateID, &item.Owner.Kind, &item.Owner.ID, &item.Quantity, &item.Durability, &enchantments, &item.CustomName, &modifications, &item.CreatedAt, &lastUsed); err != nil {
+	if err := row.Scan(&item.ID, &item.TemplateID, &item.Owner.Kind, &item.Owner.ID, &item.Quantity, &item.Durability, &enchantments, &item.CustomName, &modifications, &item.CreatedAt, &lastUsed, &item.HeldSince); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(enchantments, &item.Enchantments); err != nil {
@@ -122,7 +122,7 @@ func (r *ItemRepository) GetRoomItems(roomID string) ([]*items.ItemInstance, err
 	return r.getOwnedItems(items.RoomOwner(roomID))
 }
 func (r *ItemRepository) getOwnedItems(owner items.Owner) ([]*items.ItemInstance, error) {
-	rows, err := r.db.Query(`SELECT `+itemColumns+` FROM item_instances WHERE owner_kind=$1 AND owner_id=$2 ORDER BY id`, owner.Kind, owner.ID)
+	rows, err := r.db.Query(`SELECT `+itemColumns+` FROM item_instances WHERE owner_kind=$1 AND owner_id=$2 ORDER BY held_since, id`, owner.Kind, owner.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list items held by %s: %w", owner, err)
 	}
@@ -152,7 +152,7 @@ func (r *ItemRepository) TransferItem(itemID string, from, to items.Owner) (bool
 	if err := validateOwner(to); err != nil {
 		return false, err
 	}
-	result, err := r.db.Exec(`UPDATE item_instances SET owner_kind=$4,owner_id=$5 WHERE id=$1 AND owner_kind=$2 AND owner_id=$3`, itemID, from.Kind, from.ID, to.Kind, to.ID)
+	result, err := r.db.Exec(`UPDATE item_instances SET owner_kind=$4,owner_id=$5,held_since=now() WHERE id=$1 AND owner_kind=$2 AND owner_id=$3`, itemID, from.Kind, from.ID, to.Kind, to.ID)
 	if err != nil {
 		return false, fmt.Errorf("failed to transfer item %q from %s to %s: %w", itemID, from, to, err)
 	}

@@ -209,6 +209,16 @@ func (ir *ItemRegistry) DisplayName(item *ItemInstance) string {
 	return "Unknown Item"
 }
 
+// ShortDescription is how an Item is named inside a sentence: its display name
+// with "a" or "an", e.g. "a Training Sword", "an Iron Key".
+func (ir *ItemRegistry) ShortDescription(item *ItemInstance) string {
+	name := ir.DisplayName(item)
+	if strings.ContainsRune("aeiouAEIOU", rune(name[0])) {
+		return "an " + name
+	}
+	return "a " + name
+}
+
 // Label is how an Item is listed in look and inventory: its display name, with
 // a count for stacks. Instance IDs are never shown to players.
 func (ir *ItemRegistry) Label(item *ItemInstance) string {

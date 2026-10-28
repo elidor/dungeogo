@@ -455,3 +455,51 @@ func TestItemStorageErrorsNameTheItem(t *testing.T) {
 		t.Fatalf("storage failure misreported as not found: %v", err)
 	}
 }
+
+func TestOwnedItemsListInArrivalOrder(t *testing.T) {
+	manager := setupTestDB(t)
+	repo := manager.Items()
+	character := items.CharacterOwner(existingItemCharacter(t, manager))
+	room := items.RoomOwner("newbie_east")
+
+	first, second := createTestItemInstance(), createTestItemInstance()
+	first.ID, second.ID = "a0000000-0000-4000-8000-000000000001", "a0000000-0000-4000-8000-000000000002"
+	for _, item := range []*items.ItemInstance{first, second} {
+		item.Owner = room
+		if err := repo.CreateItemInstance(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := func(list []*items.ItemInstance, err error) []string {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, item := range list {
+			out = append(out, item.ID)
+		}
+		return out
+	}
+	if got := ids(repo.GetRoomItems(room.ID)); strings.Join(got, ",") != first.ID+","+second.ID {
+		t.Fatalf("initial room order %v", got)
+	}
+
+	// The first item leaves and comes back, so it now arrived last.
+	for _, step := range [][2]items.Owner{{room, character}, {character, room}} {
+		if moved, err := repo.TransferItem(first.ID, step[0], step[1]); err != nil || !moved {
+			t.Fatalf("transfer %v -> %v: moved=%v err=%v", step[0], step[1], moved, err)
+		}
+	}
+	if got := ids(repo.GetRoomItems(room.ID)); strings.Join(got, ",") != second.ID+","+first.ID {
+		t.Fatalf("room order after re-arrival %v, want second then first", got)
+	}
+	back, err := repo.GetItemInstance(first.ID)
+	if err != nil || !back.HeldSince.After(time.Time{}) {
+		t.Fatalf("held_since not loaded: %+v %v", back, err)
+	}
+	stayed, err := repo.GetItemInstance(second.ID)
+	if err != nil || !back.HeldSince.After(stayed.HeldSince) {
+		t.Fatalf("re-arrived item held_since %v should be after %v", back.HeldSince, stayed.HeldSince)
+	}
+}

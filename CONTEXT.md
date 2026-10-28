@@ -41,3 +41,19 @@ _Avoid_: object, thing, item instance (outside persistence code)
 **Owner**:
 The one Room or Character that currently holds an Item. Deleting a Character destroys the Items it holds (see ADR-0001).
 _Avoid_: holder, location (for items), container
+
+**Display name**:
+The name players see for an Item: its custom name if it has one, otherwise its template's name, e.g. "Training Sword".
+_Avoid_: label, title
+
+**Short description**:
+How an Item is named inside a sentence: its display name with an article, e.g. "a Training Sword", "an Iron Key".
+_Avoid_: short desc, sdesc
+
+**Item target**:
+What a player types to pick out an Item: a keyword matching the start of any word in its display name, optionally numbered as `2.sword` for the second match. A bare keyword means the first match. Matches are numbered in arrival order.
+_Avoid_: selector, item spec, item argument
+
+**Arrival order**:
+The order Items came to their current Owner, oldest first. `look`, `inventory` and Item target numbers all follow it.
+_Avoid_: item order, sort order

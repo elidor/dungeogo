@@ -28,21 +28,9 @@ func (s *World) localMessage(characterID, verb, text string) world.Result {
 	if err != nil || actor.Location == nil {
 		return world.Reply(characterID, "You cannot communicate right now.")
 	}
-	room, err := s.repositories.World().LoadRoomDefinition(actor.Location.RoomID)
-	if err != nil || room.ZoneID != actor.Location.ZoneID {
+	room, ok := s.presentRoom(actor)
+	if !ok {
 		return world.Reply(characterID, "You cannot communicate from your current location.")
-	}
-	if s.presence != nil {
-		current := false
-		for _, c := range s.presence.Characters() {
-			if c.ID == characterID && c.RoomID == room.ID && c.ZoneID == room.ZoneID {
-				current = true
-				break
-			}
-		}
-		if !current {
-			return world.Reply(characterID, "You cannot communicate from your current location.")
-		}
 	}
 	sender, recipient := "You "+text, actor.Name+" "+text
 	if verb == "say" {

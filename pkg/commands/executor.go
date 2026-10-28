@@ -67,6 +67,12 @@ func (e *Executor) ExecuteAction(cmd *Command) (world.Result, error) {
 		if cmd.Verb == "look" && len(cmd.Args) == 0 {
 			return e.worldActions.Look(cmd.CharacterID), nil
 		}
+		if cmd.Verb == "get" {
+			return e.worldActions.Get(cmd.CharacterID, strings.Join(cmd.Args, " ")), nil
+		}
+		if cmd.Verb == "drop" {
+			return e.worldActions.Drop(cmd.CharacterID, strings.Join(cmd.Args, " ")), nil
+		}
 	}
 	lines, err := e.executeText(cmd)
 	return world.Reply(cmd.CharacterID, lines...), err
@@ -124,8 +130,8 @@ func (e *Executor) initializeHandlers() {
 
 	// Inventory handlers
 	e.handlers["inventory"] = &InventoryHandler{repoManager: e.repoManager, templates: e.templates}
-	e.handlers["get"] = &GetHandler{repoManager: e.repoManager}
-	e.handlers["drop"] = &DropHandler{repoManager: e.repoManager}
+	e.handlers["get"] = &GetHandler{world: e.worldActions}
+	e.handlers["drop"] = &DropHandler{world: e.worldActions}
 	e.handlers["give"] = &GiveHandler{repoManager: e.repoManager}
 	e.handlers["wear"] = &WearHandler{repoManager: e.repoManager}
 	e.handlers["remove"] = &RemoveHandler{repoManager: e.repoManager}
@@ -304,22 +310,16 @@ func (h *InventoryHandler) Execute(cmd *Command) ([]string, error) {
 	return response, nil
 }
 
-type GetHandler struct {
-	repoManager interfaces.RepositoryManager
-}
+type GetHandler struct{ world *actions.World }
 
 func (h *GetHandler) Execute(cmd *Command) ([]string, error) {
-	item := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You get %s.", item)}, nil
+	return h.world.Get(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
 }
 
-type DropHandler struct {
-	repoManager interfaces.RepositoryManager
-}
+type DropHandler struct{ world *actions.World }
 
 func (h *DropHandler) Execute(cmd *Command) ([]string, error) {
-	item := strings.Join(cmd.Args, " ")
-	return []string{fmt.Sprintf("You drop %s.", item)}, nil
+	return h.world.Drop(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
 }
 
 type GiveHandler struct {

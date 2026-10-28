@@ -285,5 +285,20 @@ Existing test fixtures now create real owners rather than placeholder strings.
 DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 -timeout=120s ./...
 ```
 
-Item movement in these tests uses repository operations. Gameplay pickup and drop
-behavior, including competing actions, belongs to issue #10.
+## Picking up and dropping items
+
+`TestItemActions_GetDropTargetsMessagesAndPersistence` drives `get`, `take` and
+`drop` over TCP with an observer in the same room and one in another room. It
+covers actor and room wording, numbered targets counted in arrival order, missing,
+out-of-range and malformed targets leaving ownership unchanged, dropping after
+moving rooms, and inventory after reconnecting.
+`TestItemActions_CompetingPickupsExactlyOneWins` has two clients send `get gem`
+for the same item simultaneously, ten times; exactly one wins each round and the
+other gets a clear refusal. `TestGetReportsLostRaceWithoutRoomMessage` covers the
+reply when another writer moves the item between listing and transfer.
+`TestOwnedItemsListInArrivalOrder` checks that an item which leaves and returns
+is listed last (migration `008_item_arrival_order.sql`).
+
+```bash
+DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/integration ./pkg/game/... ./pkg/persistence/postgres
+```
