@@ -332,3 +332,20 @@ database and exits 0, or 1 when closing fails.
 go test -race -count=1 ./pkg/server ./cmd/server
 DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 -run TestLifecycle ./pkg/integration
 ```
+
+## Honest commands and the milestone walkthrough
+
+`pkg/commands` tests check that every verb the parser knows is either implemented
+or listed in `notYetAvailable`, that each unavailable verb answers "isn't available
+yet" with or without arguments, and that `commands` never lists an unavailable verb
+as working.
+
+`scripts/walkthrough.py` drives two telnet-style clients against a built server and
+an empty database: account and character creation, exploration, speech, get/give/drop,
+unavailable commands, quit and reconnect, and a SIGTERM restart. It records every
+line and 37 pass/fail checks; `docs/milestone-walkthrough.md` is the recorded run.
+
+```bash
+go build -o bin/server ./cmd/server
+python3 scripts/walkthrough.py bin/server "postgres://…/empty_db" walkthrough.md server.log
+```

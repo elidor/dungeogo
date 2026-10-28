@@ -1,157 +1,39 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project Overview
-
-DungeoGo is a Go-based server application that uses a configuration system with environment variables. The project follows a standard Go project layout with a cmd/server entry point.
+DungeoGo is a MUD server in Go: players connect over TCP, and all game state lives in PostgreSQL. What works today and what doesn't is in `PROJECT_STATUS.md`; read it before claiming or documenting a capability. Use the domain terms in `CONTEXT.md` (Player, Character, Session, Room, Item, Owner, Item target, …) in code, tests, issues and docs, and read the ADRs in `docs/adr/` before changing an area they cover.
 
 ## Architecture
 
-The application consists of two main components:
+- `cmd/server` wires config, PostgreSQL, the game engine and the TCP server, and owns startup and ordered shutdown.
+- `pkg/game/actions` is where gameplay happens. Every action runs under the `World` action lock shared with movement, reads durable state, and returns a `world.Result` of addressed messages: to a Character, to a Room (excluding some Characters), or pinned to a Session. Actions never touch sockets.
+- `pkg/server` owns connections and Sessions. It resolves a Result's audiences through the `SessionRegistry` and delivers them. A failed delivery never rolls back committed game state.
+- `pkg/persistence` holds repository interfaces plus their PostgreSQL implementation. `pkg/game/items`, `character`, `player` and `world` hold the domain types.
+- `pkg/commands` parses input and routes verbs. Verbs the game doesn't implement are listed in `notYetAvailable` and answer "isn't available yet". `help` and `commands` are built from `availableCommands`, so add a working verb there and remove it from `notYetAvailable` in the same change.
 
-1. **Main Server** (`cmd/server/main.go`) - Entry point that initializes configuration and starts the application
-2. **Configuration System** (`config/config.go`) - Flexible configuration management using the provider pattern
+## Conventions
 
-### Configuration System
+- **Item ownership changes only through `TransferItem(item, from, to)`**, the conditional write from ADR-0002. Treat `moved == false` as a normal outcome. Owners always name their kind: `items.RoomOwner(id)` or `items.CharacterOwner(id)`.
+- **Report success after the durable write commits**, and build the success messages from what was committed.
+- **Migrations are append-only.** Add the next numbered `migrations/NNN_*.sql` file; applied migrations never re-run, so editing one changes nothing for existing databases.
+- **Database tests must actually run.** `DUNGEOGO_REQUIRE_DB=1` turns an unavailable PostgreSQL into a failure instead of a skip; each test gets a disposable database migrated with the real migrations (`internal/testdb`). The bar for a change is `DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./...` passing, with `TEST_DATABASE_URL` pointing at a PostgreSQL role that can create databases. `TESTING.md` maps each test group to what it covers.
+- **Player-visible behaviour gets a TCP test** in `pkg/integration`, driving real sessions; concurrency claims get a test that races real clients.
+- **Commands only claim what happened.** A reply never describes an effect that wasn't made.
+- `scripts/walkthrough.py` replays a two-player session against a built server; rerun it and refresh `docs/milestone-walkthrough.md` when player-facing behaviour changes.
 
-The config package implements a provider pattern for configuration management:
-- `Config` struct holds a `ConfigProvider` interface
-- `FileProvider` loads environment variables from .env files using godotenv
-- `DefaultProvider` reads from system environment variables
-- Predefined configuration keys: PORT, BIND_ADDRESS, DATABASE_URL, MAX_CONNECTIONS, MAX_THREADS
+## Configuration
 
-## Development Commands
+Environment variables, or a `.env` file in the working directory: `DATABASE_URL` (required), `PORT` (default 8080), `BIND_ADDRESS` (default localhost), `STARTING_ROOM` (default `starting_room`). `make help` lists build, test and container targets.
 
-### Building and Running
-```bash
-# Build the server
-go build -o bin/server ./cmd/server
+## Agent skills
 
-# Run directly with go
-go run ./cmd/server
+### Issue tracker
 
-# Run with custom .env file
-go run ./cmd/server
-```
+Issues are tracked in GitHub Issues on elidor/dungeogo (via `gh`). See `docs/agents/issue-tracker.md`.
 
-### Testing
-```bash
-# Run all tests
-go test ./...
+### Triage labels
 
-# Run tests with coverage
-go test -cover ./...
+Default vocabulary: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix. See `docs/agents/triage-labels.md`.
 
-# Run tests for specific package
-go test ./config
-```
+### Domain docs
 
-### Development Tools
-```bash
-# Format code
-go fmt ./...
-
-# Vet code for potential issues
-go vet ./...
-
-# Tidy dependencies
-go mod tidy
-```
-
-## Environment Configuration
-
-The application expects these environment variables (can be set via .env file):
-- `PORT` - Server port (default from VSCode config: 8080)
-- `BIND_ADDRESS` - Server bind address (default: localhost)  
-- `DATABASE_URL` - Database connection string
-- `MAX_CONNECTIONS` - Maximum database connections (default: 100)
-- `MAX_THREADS` - Maximum threads (default: 10)
-
-## Project Structure
-
-```
-dungeogo/
-├── cmd/server/          # Main application entry point
-├── config/              # Configuration management
-├── .vscode/             # VSCode debug configuration
-├── go.mod               # Go module definition
-└── .env                 # Environment variables (gitignored)
-```
-
-The VSCode launch configuration provides example environment values for development.
-
-## Current Implementation Status
-
-The DungeoGo server now includes a complete foundation with the following implemented systems:
-
-### Core Systems ✅
-- **Player/Character System**: Account management with multiple character support
-- **Race/Class/Skills**: Composable character creation with races (Human, Elf, Dwarf), classes (Warrior, Mage, Rogue), and skill progression
-- **Item System**: Template-based items with instance modifications, enchantments, and persistence
-- **TCP Server**: Multi-client connection handling with session management
-- **Command System**: Extensible parser and executor for 40+ game commands
-- **Database Integration**: PostgreSQL persistence layer with full CRUD operations
-
-### Game Commands Available
-- **Movement**: north, south, east, west, up, down, ne, nw, se, sw
-- **Communication**: say, tell, yell, whisper, chat  
-- **Information**: look, examine, who, score, time, weather
-- **Inventory**: inventory, get, drop, give, wear, remove
-- **Skills**: skills, practice
-- **Social**: emote, smile, wave, bow
-- **Combat**: kill, flee, defend (basic implementations)
-- **System**: help, commands, quit, save
-
-### Database Schema
-Complete PostgreSQL schema with tables for:
-- players (account data)
-- characters (game avatars)  
-- item_instances (owned items)
-- room_states (dynamic world data)
-- npc_states (NPC persistence)
-- world_events (global events)
-
-### Getting Started
-1. Set up PostgreSQL database and run migrations/001_initial_schema.sql
-2. Create .env file with DATABASE_URL, PORT, BIND_ADDRESS
-3. `go build ./cmd/server && ./server`
-4. Connect via telnet: `telnet localhost 8080`
-5. Login with username 'admin', password 'admin' for testing
-
-## Testing
-
-The project includes comprehensive test coverage for all core systems:
-
-### Running Tests
-```bash
-# Run all tests
-./test.sh
-
-# Run with coverage analysis
-./test.sh --coverage
-
-# Run individual test suites
-go test ./pkg/game/character -v    # Character system tests
-go test ./pkg/game/items -v        # Item system tests  
-go test ./pkg/game/player -v       # Player system tests
-go test ./pkg/commands -v          # Command parsing tests
-```
-
-### Test Coverage
-- **Character System**: Race properties, class mechanics, skill progression, stat calculation
-- **Item System**: Template creation, instance management, enchantments, stacking logic
-- **Player System**: Account management, preferences, subscription handling
-- **Command System**: Parsing, aliases, command types, validation
-
-### Database Integration Tests
-Some tests require PostgreSQL setup. Install PostgreSQL and set `TEST_DATABASE_URL` to run full integration tests.
-
-## Next Development Steps
-- World building system (rooms, zones, connections)
-- Combat mechanics implementation  
-- NPC AI and interaction system
-- Magic/spell casting system
-- Quest and progression systems
-- Complete persistence layer tests
-- Integration test suite
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

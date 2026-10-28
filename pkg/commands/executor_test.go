@@ -234,8 +234,8 @@ func TestExecuteLookCommand(t *testing.T) {
 		t.Errorf("Unexpected error: %v", err)
 	}
 
-	if !strings.Contains(responses[0], "look at sword") {
-		t.Errorf("Expected target look message")
+	if !strings.Contains(responses[0], "isn't available yet") {
+		t.Errorf("look <target> should say it isn't available, got %q", responses[0])
 	}
 }
 
@@ -303,16 +303,9 @@ func TestExecuteHelpCommand(t *testing.T) {
 		t.Errorf("Expected multiple help responses")
 	}
 
-	// Should mention command categories
-	found := false
-	for _, response := range responses {
-		if strings.Contains(response, "categories") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("Expected help to mention command categories")
+	// Should list the help topics
+	if out := strings.Join(responses, " "); !strings.Contains(out, "topics") || !strings.Contains(out, "items") {
+		t.Errorf("Expected help to list topics, got %q", out)
 	}
 
 	// Test help with topic
@@ -357,7 +350,7 @@ func TestExecuteCommandsCommand(t *testing.T) {
 	}
 
 	// Should list various command types
-	categories := []string{"Movement", "Communication", "Information", "Inventory"}
+	categories := []string{"Movement", "Communication", "Information", "Items", "Not available yet"}
 	for _, category := range categories {
 		found := false
 		for _, response := range responses {
@@ -411,72 +404,52 @@ func TestExecuteEmoteCommand(t *testing.T) {
 	}
 }
 
-func TestExecuteSocialCommand(t *testing.T) {
-	repoManager := testutil.SetupTestDB(t)
-	if repoManager == nil {
-		t.Skip("No database available for testing")
-	}
-
-	executor := NewExecutor(repoManager)
-
-	// Test social command without target
-	cmd := &Command{
-		Type:        CommandSocial,
-		Verb:        "smile",
-		Args:        []string{},
-		PlayerID:    "player1",
-		CharacterID: "char1",
-	}
-
-	responses, err := executor.Execute(cmd)
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-
-	if !strings.Contains(responses[0], "You smile.") {
-		t.Errorf("Expected general smile message")
-	}
-
-	// Test social command with target
-	cmd.Args = []string{"bob"}
-	responses, err = executor.Execute(cmd)
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-
-	if !strings.Contains(responses[0], "You smile at bob.") {
-		t.Errorf("Expected targeted smile message")
+// TestUnavailableCommandsSaySo checks every command the parser knows but the
+// game doesn't implement answers plainly, never with a pretend success (#13).
+func TestUnavailableCommandsSaySo(t *testing.T) {
+	executor := NewExecutor(nil)
+	for verb := range notYetAvailable {
+		for _, args := range [][]string{nil, {"bob"}, {"sword", "bob"}} {
+			responses, err := executor.Execute(&Command{Type: CommandSocial, Verb: verb, Args: args, CharacterID: "c1"})
+			if err != nil {
+				t.Fatalf("%s %v: %v", verb, args, err)
+			}
+			out := strings.Join(responses, " ")
+			if !strings.Contains(out, "'"+verb+"' isn't available yet") {
+				t.Errorf("%s %v = %q, want it to say it isn't available", verb, args, out)
+			}
+		}
 	}
 }
 
-func TestExecuteUnimplementedCommand(t *testing.T) {
-	repoManager := testutil.SetupTestDB(t)
-	if repoManager == nil {
-		t.Skip("No database available for testing")
+func TestEveryParsedCommandIsAvailableOrSaysItIsnt(t *testing.T) {
+	executor := NewExecutor(nil)
+	for verb := range NewParser().commands {
+		_, handled := executor.handlers[verb]
+		routed := verb == "get" || verb == "drop" || verb == "give"
+		if !handled && !routed && !notYetAvailable[verb] {
+			t.Errorf("'%s' is parsed but neither implemented nor listed as not available yet", verb)
+		}
+		if (handled || routed) && notYetAvailable[verb] {
+			t.Errorf("'%s' is implemented but also listed as not available", verb)
+		}
 	}
+}
 
-	executor := NewExecutor(repoManager)
-
-	// Create a command that exists in parser but not in executor
-	cmd := &Command{
-		Type:        CommandMagic,
-		Verb:        "cast",
-		Args:        []string{"fireball"},
-		PlayerID:    "player1",
-		CharacterID: "char1",
-	}
-
-	responses, err := executor.Execute(cmd)
+func TestCommandsListShowsOnlyWhatWorks(t *testing.T) {
+	responses, err := NewExecutor(nil).Execute(&Command{Type: CommandSystem, Verb: "commands"})
 	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
+		t.Fatal(err)
 	}
-
-	if len(responses) != 1 {
-		t.Errorf("Expected 1 response, got %d", len(responses))
+	for _, line := range responses[:len(responses)-1] {
+		for _, word := range strings.FieldsFunc(line, func(r rune) bool { return r == ' ' || r == ',' || r == '(' || r == ')' }) {
+			if notYetAvailable[word] {
+				t.Errorf("unavailable '%s' listed as working in %q", word, line)
+			}
+		}
 	}
-
-	if !strings.Contains(responses[0], "not implemented") {
-		t.Errorf("Expected 'not implemented' message, got: %s", responses[0])
+	if last := responses[len(responses)-1]; !strings.HasPrefix(last, "Not available yet: ") || !strings.Contains(last, "kill") {
+		t.Errorf("last line %q should list what isn't available", last)
 	}
 }
 
@@ -546,7 +519,7 @@ func TestHandlerInitialization(t *testing.T) {
 	expectedHandlers := []string{
 		"north", "south", "east", "west",
 		"say", "tell", "look", "inventory",
-		"help", "commands", "emote", "smile",
+		"help", "commands", "emote", "who",
 	}
 
 	for _, handlerName := range expectedHandlers {

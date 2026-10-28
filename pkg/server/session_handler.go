@@ -861,8 +861,6 @@ func (sh *SessionHandler) handleAccountCreation(client *Client, input string) {
 func (sh *SessionHandler) handlePasswordConfirmation(client *Client, password string) {
 	password = strings.TrimSpace(password)
 
-	fmt.Printf("Password confirmation debug - Client %s: received password length=%d\n", client.GetID(), len(password))
-
 	if client.GetTempPassword() == "" {
 		// First password entry
 		fmt.Printf("First password entry for client %s\n", client.GetID())
