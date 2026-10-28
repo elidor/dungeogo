@@ -2,6 +2,8 @@ package items
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -151,9 +153,68 @@ func (ir *ItemRegistry) loadDefaultTemplates() {
 				RequiredClass: []string{"mage"},
 			},
 		},
+		{
+			ID:          "travel_lantern",
+			Name:        "Travel Lantern",
+			Type:        ItemTool,
+			Description: "A dented brass lantern with a shutter to keep the wind off the flame.",
+			BaseStats:   ItemStats{StatBonuses: make(map[StatType]int)},
+			Rarity:      RarityCommon,
+			Weight:      1.5,
+			Value:       15,
+			Durability:  100,
+			Enchantable: false,
+			StackSize:   1,
+			Requirements: Requirements{
+				MinLevel: 1,
+				MinStats: make(map[StatType]int),
+			},
+		},
+		{
+			ID:          "smooth_stone",
+			Name:        "Smooth Stone",
+			Type:        ItemTreasure,
+			Description: "A palm-sized stone worn smooth by running water.",
+			BaseStats:   ItemStats{StatBonuses: make(map[StatType]int)},
+			Rarity:      RarityCommon,
+			Weight:      0.5,
+			Value:       1,
+			Durability:  100,
+			Enchantable: false,
+			StackSize:   1,
+			Requirements: Requirements{
+				MinLevel: 1,
+				MinStats: make(map[StatType]int),
+			},
+		},
 	}
 	
 	for _, template := range templates {
 		ir.RegisterTemplate(template)
 	}
+}
+
+// DisplayName is the name players see for an Item: its custom name if it has
+// one, otherwise its template's name.
+func (ir *ItemRegistry) DisplayName(item *ItemInstance) string {
+	if item.CustomName != "" {
+		return item.CustomName
+	}
+	if template, err := ir.GetTemplate(item.TemplateID); err == nil {
+		return template.Name
+	}
+	if item.TemplateID != "" {
+		return strings.ReplaceAll(item.TemplateID, "_", " ")
+	}
+	return "Unknown Item"
+}
+
+// Label is how an Item is listed in look and inventory: its display name, with
+// a count for stacks. Instance IDs are never shown to players.
+func (ir *ItemRegistry) Label(item *ItemInstance) string {
+	name := ir.DisplayName(item)
+	if item.Quantity > 1 {
+		return fmt.Sprintf("%s x%d", name, item.Quantity)
+	}
+	return name
 }

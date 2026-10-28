@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/elidor/dungeogo/pkg/game/actions"
+	"github.com/elidor/dungeogo/pkg/game/items"
 	"github.com/elidor/dungeogo/pkg/game/world"
 	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 )
@@ -13,6 +14,7 @@ type Executor struct {
 	repoManager  interfaces.RepositoryManager
 	handlers     map[string]CommandHandler
 	worldActions *actions.World
+	templates    *items.ItemRegistry // the game's one item registry
 }
 
 type CommandHandler interface {
@@ -30,7 +32,8 @@ func NewExecutor(repoManager interfaces.RepositoryManager) *Executor {
 		handlers:    make(map[string]CommandHandler),
 	}
 
-	e.worldActions = actions.NewWorld(repoManager)
+	e.templates = items.NewItemRegistry()
+	e.worldActions = actions.NewWorld(repoManager, e.templates)
 	e.initializeHandlers()
 	return e
 }
@@ -93,26 +96,26 @@ func (e *Executor) executeText(cmd *Command) ([]string, error) {
 
 func (e *Executor) initializeHandlers() {
 	// Movement handlers
-	e.handlers["north"] = &MovementHandler{direction: "north", repoManager: e.repoManager}
-	e.handlers["south"] = &MovementHandler{direction: "south", repoManager: e.repoManager}
-	e.handlers["east"] = &MovementHandler{direction: "east", repoManager: e.repoManager}
-	e.handlers["west"] = &MovementHandler{direction: "west", repoManager: e.repoManager}
-	e.handlers["up"] = &MovementHandler{direction: "up", repoManager: e.repoManager}
-	e.handlers["down"] = &MovementHandler{direction: "down", repoManager: e.repoManager}
-	e.handlers["northeast"] = &MovementHandler{direction: "northeast", repoManager: e.repoManager}
-	e.handlers["northwest"] = &MovementHandler{direction: "northwest", repoManager: e.repoManager}
-	e.handlers["southeast"] = &MovementHandler{direction: "southeast", repoManager: e.repoManager}
-	e.handlers["southwest"] = &MovementHandler{direction: "southwest", repoManager: e.repoManager}
+	e.handlers["north"] = &MovementHandler{direction: "north", world: e.worldActions}
+	e.handlers["south"] = &MovementHandler{direction: "south", world: e.worldActions}
+	e.handlers["east"] = &MovementHandler{direction: "east", world: e.worldActions}
+	e.handlers["west"] = &MovementHandler{direction: "west", world: e.worldActions}
+	e.handlers["up"] = &MovementHandler{direction: "up", world: e.worldActions}
+	e.handlers["down"] = &MovementHandler{direction: "down", world: e.worldActions}
+	e.handlers["northeast"] = &MovementHandler{direction: "northeast", world: e.worldActions}
+	e.handlers["northwest"] = &MovementHandler{direction: "northwest", world: e.worldActions}
+	e.handlers["southeast"] = &MovementHandler{direction: "southeast", world: e.worldActions}
+	e.handlers["southwest"] = &MovementHandler{direction: "southwest", world: e.worldActions}
 
 	// Communication handlers
-	e.handlers["say"] = &SayHandler{repoManager: e.repoManager}
-	e.handlers["tell"] = &TellHandler{repoManager: e.repoManager}
+	e.handlers["say"] = &SayHandler{world: e.worldActions}
+	e.handlers["tell"] = &TellHandler{world: e.worldActions}
 	e.handlers["yell"] = &YellHandler{}
 	e.handlers["whisper"] = &WhisperHandler{}
 	e.handlers["chat"] = &ChatHandler{}
 
 	// Information handlers
-	e.handlers["look"] = &LookHandler{repoManager: e.repoManager}
+	e.handlers["look"] = &LookHandler{world: e.worldActions}
 	e.handlers["examine"] = &ExamineHandler{repoManager: e.repoManager}
 	e.handlers["who"] = &WhoHandler{}
 	e.handlers["score"] = &ScoreHandler{repoManager: e.repoManager}
@@ -120,7 +123,7 @@ func (e *Executor) initializeHandlers() {
 	e.handlers["weather"] = &WeatherHandler{}
 
 	// Inventory handlers
-	e.handlers["inventory"] = &InventoryHandler{repoManager: e.repoManager}
+	e.handlers["inventory"] = &InventoryHandler{repoManager: e.repoManager, templates: e.templates}
 	e.handlers["get"] = &GetHandler{repoManager: e.repoManager}
 	e.handlers["drop"] = &DropHandler{repoManager: e.repoManager}
 	e.handlers["give"] = &GiveHandler{repoManager: e.repoManager}
@@ -138,7 +141,7 @@ func (e *Executor) initializeHandlers() {
 	e.handlers["save"] = &SaveHandler{repoManager: e.repoManager}
 
 	// Social handlers
-	e.handlers["emote"] = &EmoteHandler{repoManager: e.repoManager}
+	e.handlers["emote"] = &EmoteHandler{world: e.worldActions}
 	e.handlers["smile"] = &SocialHandler{action: "smile"}
 	e.handlers["wave"] = &SocialHandler{action: "wave"}
 	e.handlers["bow"] = &SocialHandler{action: "bow"}
@@ -152,29 +155,29 @@ func (e *Executor) initializeHandlers() {
 // Basic handler implementations
 
 type MovementHandler struct {
-	direction   string
-	repoManager interfaces.RepositoryManager
+	direction string
+	world     *actions.World
 }
 
 func (h *MovementHandler) Execute(cmd *Command) ([]string, error) {
-	return actions.NewWorld(h.repoManager).Move(cmd.CharacterID, h.direction).Replies(cmd.CharacterID), nil
+	return h.world.Move(cmd.CharacterID, h.direction).Replies(cmd.CharacterID), nil
 }
 
-type SayHandler struct{ repoManager interfaces.RepositoryManager }
+type SayHandler struct{ world *actions.World }
 
 func (h *SayHandler) Execute(cmd *Command) ([]string, error) {
-	return actions.NewWorld(h.repoManager).Say(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
+	return h.world.Say(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
 }
 
 type TellHandler struct {
-	repoManager interfaces.RepositoryManager
+	world *actions.World
 }
 
 func (h *TellHandler) Execute(cmd *Command) ([]string, error) {
 	if len(cmd.Args) < 2 {
 		return []string{"Usage: tell <character> <message>"}, nil
 	}
-	return actions.NewWorld(h.repoManager).Tell(cmd.CharacterID, cmd.Args[0], strings.Join(cmd.Args[1:], " ")).Replies(cmd.CharacterID), nil
+	return h.world.Tell(cmd.CharacterID, cmd.Args[0], strings.Join(cmd.Args[1:], " ")).Replies(cmd.CharacterID), nil
 }
 
 type YellHandler struct{}
@@ -205,12 +208,12 @@ func (h *ChatHandler) Execute(cmd *Command) ([]string, error) {
 }
 
 type LookHandler struct {
-	repoManager interfaces.RepositoryManager
+	world *actions.World
 }
 
 func (h *LookHandler) Execute(cmd *Command) ([]string, error) {
 	if len(cmd.Args) == 0 {
-		return actions.NewWorld(h.repoManager).Look(cmd.CharacterID).Replies(cmd.CharacterID), nil
+		return h.world.Look(cmd.CharacterID).Replies(cmd.CharacterID), nil
 	}
 	return []string{fmt.Sprintf("You look at %s.", strings.Join(cmd.Args, " "))}, nil
 }
@@ -279,6 +282,7 @@ func (h *WeatherHandler) Execute(cmd *Command) ([]string, error) {
 
 type InventoryHandler struct {
 	repoManager interfaces.RepositoryManager
+	templates   *items.ItemRegistry
 }
 
 func (h *InventoryHandler) Execute(cmd *Command) ([]string, error) {
@@ -294,7 +298,7 @@ func (h *InventoryHandler) Execute(cmd *Command) ([]string, error) {
 
 	response := []string{"You are carrying:"}
 	for _, item := range items {
-		response = append(response, fmt.Sprintf("  %s", item.DisplayLabel()))
+		response = append(response, "  "+h.templates.Label(item))
 	}
 
 	return response, nil
@@ -455,10 +459,10 @@ func (h *SaveHandler) Execute(cmd *Command) ([]string, error) {
 	return []string{"Character saved."}, nil
 }
 
-type EmoteHandler struct{ repoManager interfaces.RepositoryManager }
+type EmoteHandler struct{ world *actions.World }
 
 func (h *EmoteHandler) Execute(cmd *Command) ([]string, error) {
-	return actions.NewWorld(h.repoManager).Emote(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
+	return h.world.Emote(cmd.CharacterID, strings.Join(cmd.Args, " ")).Replies(cmd.CharacterID), nil
 }
 
 type SocialHandler struct {

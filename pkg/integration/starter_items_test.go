@@ -16,6 +16,30 @@ import (
 )
 
 const starterItemSword = "90000000-0000-4000-8000-000000000001"
+const starterItemLantern = "90000000-0000-4000-8000-000000000002"
+
+// assertItemLines checks that each wanted item appears as its own plain
+// "  <name>" line, and that no line exposes an instance ID.
+func assertItemLines(t *testing.T, out string, want []string, ids ...string) {
+	t.Helper()
+	lines := strings.Split(strings.ReplaceAll(out, "\r", ""), "\n")
+	for _, name := range want {
+		found := false
+		for _, line := range lines {
+			if line == "  "+name {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing item line %q in %q", "  "+name, out)
+		}
+	}
+	for _, id := range ids {
+		if strings.Contains(out, id) {
+			t.Fatalf("output exposes instance ID %s: %q", id, out)
+		}
+	}
+}
 
 func inventoryOutput(s *locationSession) string {
 	s.t.Helper()
@@ -43,9 +67,20 @@ func TestStarterItems_RoomInventoryAndServerRestart(t *testing.T) {
 	actor := openLocationSession(t, handler)
 	actor.login(p)
 	out := actor.selectCharacter()
-	if !strings.Contains(out, "Training Sword ["+starterItemSword+"]") || !strings.Contains(out, "Travel Lantern") || strings.Contains(out, "Smooth Stone") {
+	assertItemLines(t, out, []string{"Training Sword", "Travel Lantern"}, starterItemSword, starterItemLantern)
+	if strings.Contains(out, "Smooth Stone") {
 		t.Fatalf("spawn room items: %q", out)
 	}
+	// With no custom name, a starter Item is named by its template.
+	lantern, err := manager.Items().GetItemInstance(starterItemLantern)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lantern.CustomName = ""
+	if err := manager.Items().UpdateItemInstance(lantern); err != nil {
+		t.Fatal(err)
+	}
+	assertItemLines(t, roomLook(actor), []string{"Training Sword", "Travel Lantern"}, starterItemSword, starterItemLantern)
 	if out := inventoryOutput(actor); !strings.Contains(out, "carrying nothing") {
 		t.Fatalf("new inventory: %q", out)
 	}
@@ -69,7 +104,8 @@ func TestStarterItems_RoomInventoryAndServerRestart(t *testing.T) {
 		t.Fatalf("held item remained in room: %q", out)
 	}
 	out = inventoryOutput(actor)
-	if !strings.Contains(out, "Traveler's Blade ["+starterItemSword+"]") || !strings.Contains(out, "Leather Armor ["+armor.ID+"]") || strings.Contains(out, "Travel Lantern") {
+	assertItemLines(t, out, []string{"Traveler's Blade", "Leather Armor"}, starterItemSword, armor.ID)
+	if strings.Contains(out, "Travel Lantern") {
 		t.Fatalf("persisted inventory names: %q", out)
 	}
 	actor.disconnect()

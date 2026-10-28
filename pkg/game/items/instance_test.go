@@ -53,23 +53,6 @@ func TestNewItemInstance(t *testing.T) {
 	}
 }
 
-func TestGetDisplayName(t *testing.T) {
-	instance := NewItemInstance("rusty_sword", CharacterOwner("player1"), 1)
-	
-	// Test default display name
-	displayName := instance.GetDisplayName()
-	if displayName != "Rusty Sword" {
-		t.Errorf("Expected default display name 'Rusty Sword', got %s", displayName)
-	}
-	
-	// Test custom name
-	instance.CustomName = "Excalibur"
-	displayName = instance.GetDisplayName()
-	if displayName != "Excalibur" {
-		t.Errorf("Expected custom name 'Excalibur', got %s", displayName)
-	}
-}
-
 func TestIsBroken(t *testing.T) {
 	instance := NewItemInstance("sword", CharacterOwner("player1"), 1)
 	

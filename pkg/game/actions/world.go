@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/elidor/dungeogo/pkg/game/items"
 	"github.com/elidor/dungeogo/pkg/game/world"
 	"github.com/elidor/dungeogo/pkg/persistence/interfaces"
 )
@@ -19,11 +20,12 @@ type World struct {
 	mutex        sync.Mutex
 	repositories interfaces.RepositoryManager
 	presence     world.Presence
-	logger       *log.Logger // operator diagnostics; players never see these
+	templates    *items.ItemRegistry // names Items for players
+	logger       *log.Logger         // operator diagnostics; players never see these
 }
 
-func NewWorld(repositories interfaces.RepositoryManager) *World {
-	return &World{repositories: repositories, logger: log.Default()}
+func NewWorld(repositories interfaces.RepositoryManager, templates *items.ItemRegistry) *World {
+	return &World{repositories: repositories, templates: templates, logger: log.Default()}
 }
 
 // SetPresence is configured once, before accepting sessions.
@@ -110,7 +112,7 @@ func (s *World) describe(room *world.Room, actorID string) []string {
 	} else if len(roomItems) > 0 {
 		lines = append(lines, "Items here:")
 		for _, item := range roomItems {
-			lines = append(lines, "  "+item.DisplayLabel())
+			lines = append(lines, "  "+s.templates.Label(item))
 		}
 	}
 	return lines

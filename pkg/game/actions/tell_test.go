@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/elidor/dungeogo/pkg/game/character"
+	"github.com/elidor/dungeogo/pkg/game/items"
 	"github.com/elidor/dungeogo/pkg/game/world"
 )
 
@@ -16,7 +17,7 @@ func (p tellPresence) Characters() []world.OnlineCharacter {
 func (p tellPresence) Move(string, character.Location) {}
 
 func TestTellNameResolution(t *testing.T) {
-	service := NewWorld(nil)
+	service := NewWorld(nil, items.NewItemRegistry())
 	service.SetPresence(tellPresence{
 		{ID: "sender", SessionID: "s", Name: "Sender"},
 		{ID: "upper", SessionID: "u", Name: "Moonbeam"},

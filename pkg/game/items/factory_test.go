@@ -318,7 +318,7 @@ func TestCreateCustomInstance(t *testing.T) {
 	}
 	
 	// Verify display name uses custom name
-	displayName := instance.GetDisplayName()
+	displayName := factory.registry.DisplayName(instance)
 	if displayName != customName {
 		t.Errorf("Expected display name %s, got %s", customName, displayName)
 	}

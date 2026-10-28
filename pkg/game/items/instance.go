@@ -1,8 +1,6 @@
 package items
 
 import (
-	"fmt"
-	"strings"
 	"time"
 )
 
@@ -49,33 +47,6 @@ func NewItemInstance(templateID string, owner Owner, quantity int) *ItemInstance
 		Modifications: make(map[string]interface{}),
 		CreatedAt:     time.Now(),
 	}
-}
-
-var displayTemplates = NewItemRegistry()
-
-func (ii *ItemInstance) GetDisplayName() string {
-	if ii.CustomName != "" {
-		return ii.CustomName
-	}
-	if template, err := displayTemplates.GetTemplate(ii.TemplateID); err == nil {
-		return template.Name
-	}
-	if ii.TemplateID != "" {
-		return strings.ReplaceAll(ii.TemplateID, "_", " ")
-	}
-	return "Unknown Item"
-}
-
-// DisplayLabel exposes a stable instance identifier for otherwise identical items.
-func (ii *ItemInstance) DisplayLabel() string {
-	name := ii.GetDisplayName()
-	if ii.Quantity > 1 {
-		name = fmt.Sprintf("%s x%d", name, ii.Quantity)
-	}
-	if ii.ID != "" {
-		name += " [" + ii.ID + "]"
-	}
-	return name
 }
 
 func (ii *ItemInstance) IsBroken() bool {
