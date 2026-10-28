@@ -803,6 +803,7 @@ func (sh *SessionHandler) handleCharacterDeleteByNumber(client *Client, input st
 		}
 
 		if err := sh.repoManager.Characters().DeleteCharacter(targetID); err != nil {
+			fmt.Printf("Character deletion failed: playerID=%s characterID=%s: %v\n", client.GetPlayerID(), targetID, err)
 			client.Send("Failed to delete character.")
 			client.ClearTempMenuData()
 			client.SetState(StateCharacterSelection)

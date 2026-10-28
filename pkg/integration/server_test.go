@@ -578,6 +578,15 @@ func TestServerIntegration_GuidedSelectAndDeleteByNumber(t *testing.T) {
 		t.Fatalf("Failed to create Zulu character: %v", err)
 	}
 
+	// Deleting a Character destroys only the Items it holds (ADR-0001).
+	zuluItem := createTestItemInstance("sword", zulu.ID)
+	alphaItem := createTestItemInstance("potion", alpha.ID)
+	for _, item := range []*items.ItemInstance{zuluItem, alphaItem} {
+		if err := repoManager.Items().CreateItemInstance(item); err != nil {
+			t.Fatalf("Failed to create held item: %v", err)
+		}
+	}
+
 	conn, err := net.Dial("tcp", listener.Addr().String())
 	if err != nil {
 		t.Fatalf("Failed to connect to test server: %v", err)
@@ -676,6 +685,12 @@ func TestServerIntegration_GuidedSelectAndDeleteByNumber(t *testing.T) {
 	}
 	if charsAfterConfirm[0].Name != "Alpha" {
 		t.Fatalf("Expected remaining character to be Alpha, got %s", charsAfterConfirm[0].Name)
+	}
+	if _, err := repoManager.Items().GetItemInstance(zuluItem.ID); err == nil {
+		t.Fatal("Zulu's item survived Zulu's deletion")
+	}
+	if item, err := repoManager.Items().GetItemInstance(alphaItem.ID); err != nil || item.Owner != items.CharacterOwner(alpha.ID) {
+		t.Fatalf("Alpha's item was affected by deleting Zulu: %+v %v", item, err)
 	}
 }
 

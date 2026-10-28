@@ -267,7 +267,9 @@ DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/server ./pkg/integration ./pk
 The real migration sequence now includes `004_item_ownership.sql`,
 `005_starter_items.sql` and `006_item_owner_fk_indexes.sql`, which indexes the
 generated owner columns behind the item foreign keys so deleting a room or
-character doesn't scan every item. PostgreSQL tests cover valid versioned and unversioned
+character doesn't scan every item, and `007_character_deletion_destroys_items.sql`,
+which makes deleting a Character destroy the Items it holds (ADR-0001) while rooms
+holding items still can't be deleted. PostgreSQL tests cover valid versioned and unversioned
 upgrades, preservation of legacy fields and nullable names/timestamps, atomic
 failure for missing or ambiguous owners, foreign-key rejection of invalid owners,
 and distinct room/character queries even when IDs overlap.

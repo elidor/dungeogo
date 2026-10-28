@@ -98,9 +98,6 @@ func TestItemOwnershipConstraintsAndKindIsolation(t *testing.T) {
 			t.Fatalf("accepted dangling/invalid owner %+v", tc)
 		}
 	}
-	if _, err := manager.GetDB().Exec(`DELETE FROM characters WHERE id=$1`, id); err == nil {
-		t.Fatal("deleted character while retaining owned item")
-	}
 	if _, err := manager.GetDB().Exec(`DELETE FROM room_definitions WHERE room_id=$1`, id); err == nil {
 		t.Fatal("deleted room while retaining owned item")
 	}
@@ -219,5 +216,53 @@ func TestCompetingTransfersExactlyOneWins(t *testing.T) {
 		if moved, err := repo.TransferItem(starterSword, item.Owner, start); err != nil || !moved {
 			t.Fatalf("round %d: reset: moved=%v err=%v", round, moved, err)
 		}
+	}
+}
+
+func TestDeletingCharacterDestroysOnlyItsItems(t *testing.T) {
+	manager := setupTestDB(t)
+	doomed := existingItemCharacter(t, manager)
+	survivor := existingItemCharacter(t, manager)
+	empty := existingItemCharacter(t, manager)
+
+	held := []*items.ItemInstance{createTestItemInstance(), createTestItemInstance()}
+	for _, item := range held {
+		item.Owner = items.CharacterOwner(doomed)
+	}
+	kept := createTestItemInstance()
+	kept.Owner = items.CharacterOwner(survivor)
+	for _, item := range append(held, kept) {
+		if err := manager.Items().CreateItemInstance(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	roomItems, err := manager.Items().GetRoomItems("starting_room")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []string{doomed, empty} {
+		if err := manager.Characters().DeleteCharacter(id); err != nil {
+			t.Fatalf("delete character %s: %v", id, err)
+		}
+		if _, err := manager.Characters().GetCharacter(id); err == nil {
+			t.Fatalf("character %s still exists", id)
+		}
+	}
+	for _, item := range held {
+		if _, err := manager.Items().GetItemInstance(item.ID); err == nil {
+			t.Fatalf("item %s outlived its deleted character", item.ID)
+		}
+	}
+	if item, err := manager.Items().GetItemInstance(kept.ID); err != nil || item.Owner != kept.Owner {
+		t.Fatalf("another character's item was affected: %+v %v", item, err)
+	}
+	after, err := manager.Items().GetRoomItems("starting_room")
+	if err != nil || len(after) != len(roomItems) {
+		t.Fatalf("room items changed: before %d, after %d (%v)", len(roomItems), len(after), err)
+	}
+	// Room ownership still restricts deletion: a room holding items can't vanish.
+	if _, err := manager.GetDB().Exec(`DELETE FROM room_definitions WHERE room_id='starting_room'`); err == nil {
+		t.Fatal("deleted a room that holds items")
 	}
 }
