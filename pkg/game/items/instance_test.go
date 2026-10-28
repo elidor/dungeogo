@@ -10,15 +10,15 @@ func TestNewItemInstance(t *testing.T) {
 	ownerID := "test_player_123"
 	quantity := 1
 	
-	instance := NewItemInstance(templateID, ownerID, quantity)
+	instance := NewItemInstance(templateID, CharacterOwner(ownerID), quantity)
 	
 	// Test basic properties
 	if instance.TemplateID != templateID {
 		t.Errorf("Expected template ID %s, got %s", templateID, instance.TemplateID)
 	}
 	
-	if instance.OwnerID != ownerID {
-		t.Errorf("Expected owner ID %s, got %s", ownerID, instance.OwnerID)
+	if instance.Owner != CharacterOwner(ownerID) {
+		t.Errorf("Expected owner %v, got %v", CharacterOwner(ownerID), instance.Owner)
 	}
 	
 	if instance.Quantity != quantity {
@@ -54,7 +54,7 @@ func TestNewItemInstance(t *testing.T) {
 }
 
 func TestGetDisplayName(t *testing.T) {
-	instance := NewItemInstance("rusty_sword", "player1", 1)
+	instance := NewItemInstance("rusty_sword", CharacterOwner("player1"), 1)
 	
 	// Test default display name
 	displayName := instance.GetDisplayName()
@@ -71,7 +71,7 @@ func TestGetDisplayName(t *testing.T) {
 }
 
 func TestIsBroken(t *testing.T) {
-	instance := NewItemInstance("sword", "player1", 1)
+	instance := NewItemInstance("sword", CharacterOwner("player1"), 1)
 	
 	// Should not be broken initially
 	if instance.IsBroken() {
@@ -92,7 +92,7 @@ func TestIsBroken(t *testing.T) {
 }
 
 func TestTakeDamage(t *testing.T) {
-	instance := NewItemInstance("sword", "player1", 1)
+	instance := NewItemInstance("sword", CharacterOwner("player1"), 1)
 	instance.Durability = 50
 	
 	// Take some damage
@@ -109,7 +109,7 @@ func TestTakeDamage(t *testing.T) {
 }
 
 func TestRepair(t *testing.T) {
-	instance := NewItemInstance("sword", "player1", 1)
+	instance := NewItemInstance("sword", CharacterOwner("player1"), 1)
 	instance.Durability = 30
 	
 	// Repair the item
@@ -123,7 +123,7 @@ func TestRepair(t *testing.T) {
 }
 
 func TestEnchantmentManagement(t *testing.T) {
-	instance := NewItemInstance("sword", "player1", 1)
+	instance := NewItemInstance("sword", CharacterOwner("player1"), 1)
 	
 	// Create test enchantment
 	enchantment := Enchantment{
@@ -195,7 +195,7 @@ func TestEnchantmentManagement(t *testing.T) {
 }
 
 func TestUpdateLastUsed(t *testing.T) {
-	instance := NewItemInstance("sword", "player1", 1)
+	instance := NewItemInstance("sword", CharacterOwner("player1"), 1)
 	
 	// Initially should be zero
 	if !instance.LastUsed.IsZero() {
@@ -215,8 +215,8 @@ func TestUpdateLastUsed(t *testing.T) {
 
 func TestCanStack(t *testing.T) {
 	// Create two identical basic instances
-	instance1 := NewItemInstance("potion", "player1", 5)
-	instance2 := NewItemInstance("potion", "player1", 3)
+	instance1 := NewItemInstance("potion", CharacterOwner("player1"), 5)
+	instance2 := NewItemInstance("potion", CharacterOwner("player1"), 3)
 	
 	// Should be stackable
 	if !instance1.CanStack(instance2) {
@@ -224,13 +224,13 @@ func TestCanStack(t *testing.T) {
 	}
 	
 	// Different templates
-	instance3 := NewItemInstance("sword", "player1", 1)
+	instance3 := NewItemInstance("sword", CharacterOwner("player1"), 1)
 	if instance1.CanStack(instance3) {
 		t.Errorf("Different item templates should not be stackable")
 	}
 	
 	// Different durability
-	instance4 := NewItemInstance("potion", "player1", 2)
+	instance4 := NewItemInstance("potion", CharacterOwner("player1"), 2)
 	instance4.Durability = 50
 	if instance1.CanStack(instance4) {
 		t.Errorf("Items with different durability should not be stackable")
@@ -238,14 +238,14 @@ func TestCanStack(t *testing.T) {
 	
 	// With enchantments
 	instance1.AddEnchantment(Enchantment{ID: "test", Type: EnchantmentDamage, Power: 1})
-	instance5 := NewItemInstance("potion", "player1", 2)
+	instance5 := NewItemInstance("potion", CharacterOwner("player1"), 2)
 	if instance1.CanStack(instance5) {
 		t.Errorf("Enchanted items should not be stackable with non-enchanted")
 	}
 	
 	// Different custom names
-	instance6 := NewItemInstance("potion", "player1", 2)
-	instance7 := NewItemInstance("potion", "player1", 2)
+	instance6 := NewItemInstance("potion", CharacterOwner("player1"), 2)
+	instance7 := NewItemInstance("potion", CharacterOwner("player1"), 2)
 	instance7.CustomName = "Special Potion"
 	if instance6.CanStack(instance7) {
 		t.Errorf("Items with different custom names should not be stackable")
@@ -271,7 +271,7 @@ func TestEnchantmentTypes(t *testing.T) {
 }
 
 func TestEnchantmentDuration(t *testing.T) {
-	instance := NewItemInstance("sword", "player1", 1)
+	instance := NewItemInstance("sword", CharacterOwner("player1"), 1)
 	
 	// Create temporary enchantment
 	tempEnchantment := Enchantment{

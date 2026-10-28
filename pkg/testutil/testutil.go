@@ -55,11 +55,11 @@ func CreateTestCharacter(playerID string) *character.Character {
 }
 
 // CreateTestItemInstance creates a test item instance
-func CreateTestItemInstance(templateID, ownerID string) *items.ItemInstance {
+func CreateTestItemInstance(templateID string, owner items.Owner) *items.ItemInstance {
 	return &items.ItemInstance{
 		ID:            uuid.New().String(),
 		TemplateID:    templateID,
-		OwnerID:       ownerID,
+		Owner:         owner,
 		Quantity:      1,
 		Durability:    100,
 		Enchantments:  []items.Enchantment{},

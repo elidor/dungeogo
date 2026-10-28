@@ -24,7 +24,7 @@ func TestStarterItemsPersistAcrossRepeatedBootAndRepositoryRestart(t *testing.T)
 		t.Fatalf("starter items: %v %v", roomItems, err)
 	}
 	for _, item := range roomItems {
-		if item.Quantity != 1 || item.OwnerKind != items.OwnerRoom || item.ID == "" || item.CustomName == "" {
+		if item.Quantity != 1 || item.Owner.Kind != items.OwnerRoom || item.ID == "" || item.CustomName == "" {
 			t.Fatalf("unidentifiable or stacking starter item: %+v", item)
 		}
 	}
@@ -49,7 +49,7 @@ func TestStarterItemsPersistAcrossRepeatedBootAndRepositoryRestart(t *testing.T)
 		}
 	}
 	item, err := manager.Items().GetItemInstance(starterSword)
-	if err != nil || item.OwnerID != owner || item.OwnerKind != items.OwnerCharacter {
+	if err != nil || item.Owner.ID != owner || item.Owner.Kind != items.OwnerCharacter {
 		t.Fatalf("boot reset sword: %+v %v", item, err)
 	}
 	if _, err := manager.Items().GetItemInstance(starterLantern); err == nil {
@@ -69,11 +69,11 @@ func TestItemOwnershipConstraintsAndKindIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	roomItem := createTestItemInstance()
-	roomItem.OwnerID = id
-	roomItem.OwnerKind = items.OwnerRoom
+	roomItem.Owner = items.Owner{ID: id}
+	roomItem.Owner.Kind = items.OwnerRoom
 	charItem := createTestItemInstance()
-	charItem.OwnerID = id
-	charItem.OwnerKind = items.OwnerCharacter
+	charItem.Owner = items.Owner{ID: id}
+	charItem.Owner.Kind = items.OwnerCharacter
 	for _, item := range []*items.ItemInstance{roomItem, charItem} {
 		if err := manager.Items().CreateItemInstance(item); err != nil {
 			t.Fatal(err)
@@ -88,7 +88,7 @@ func TestItemOwnershipConstraintsAndKindIsolation(t *testing.T) {
 		t.Fatalf("character ownership mixed: %v %v", inventory, err)
 	}
 	ambiguous := createTestItemInstance()
-	ambiguous.OwnerID = id
+	ambiguous.Owner = items.Owner{ID: id}
 	if err := manager.Items().CreateItemInstance(ambiguous); err == nil {
 		t.Fatal("legacy API guessed ambiguous ownership")
 	}
@@ -109,7 +109,52 @@ func TestItemOwnershipConstraintsAndKindIsolation(t *testing.T) {
 		t.Fatal("transferred to nonexistent owner")
 	}
 	unchanged, err := manager.Items().GetItemInstance(charItem.ID)
-	if err != nil || unchanged.OwnerKind != items.OwnerCharacter || unchanged.OwnerID != id {
+	if err != nil || unchanged.Owner.Kind != items.OwnerCharacter || unchanged.Owner.ID != id {
 		t.Fatalf("failed transfer changed ownership: %+v %v", unchanged, err)
+	}
+}
+
+func TestItemOwnerResolution(t *testing.T) {
+	_, url := testdb.New(t, true)
+	manager, err := NewPostgreSQLRepositoryManager(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	character := existingItemCharacter(t, manager)
+
+	for _, tc := range []struct {
+		name  string
+		given items.Owner
+		want  items.Owner
+	}{
+		{"room kind inferred from ID", items.Owner{ID: "newbie_west"}, items.RoomOwner("newbie_west")},
+		{"character kind inferred from ID", items.Owner{ID: character}, items.CharacterOwner(character)},
+		{"explicit room kept", items.RoomOwner("newbie_east"), items.RoomOwner("newbie_east")},
+		{"explicit character kept", items.CharacterOwner(character), items.CharacterOwner(character)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			item := createTestItemInstance()
+			item.Owner = tc.given
+			if err := manager.Items().CreateItemInstance(item); err != nil {
+				t.Fatal(err)
+			}
+			if item.Owner != tc.want {
+				t.Fatalf("created owner = %v, want %v", item.Owner, tc.want)
+			}
+			stored, err := manager.Items().GetItemInstance(item.ID)
+			if err != nil || stored.Owner != tc.want {
+				t.Fatalf("stored owner = %+v %v, want %v", stored, err, tc.want)
+			}
+		})
+	}
+
+	invalid := createTestItemInstance()
+	invalid.Owner = items.Owner{Kind: "npc", ID: "newbie_west"}
+	if err := manager.Items().CreateItemInstance(invalid); err == nil {
+		t.Fatal("created item with invalid owner kind")
+	}
+	if _, err := manager.Items().GetItemInstance(invalid.ID); err == nil {
+		t.Fatal("invalid owner kind was written")
 	}
 }

@@ -12,31 +12,33 @@ type ItemRepository struct{ db *sql.DB }
 
 func NewItemRepository(db *sql.DB) *ItemRepository { return &ItemRepository{db: db} }
 
-// resolveOwner preserves callers that supply only owner_id. Ambiguous legacy
-// identifiers require an explicit kind; generated foreign keys enforce existence.
-func (r *ItemRepository) resolveOwner(id string, kind items.OwnerKind) (items.OwnerKind, error) {
-	if kind != "" {
-		if kind != items.OwnerRoom && kind != items.OwnerCharacter {
-			return "", fmt.Errorf("invalid item owner kind %q", kind)
+// resolveOwner is the single place that decides whether an owner ID names a Room
+// or a Character. An Owner with a known Kind is checked and returned unchanged;
+// an Owner with no Kind is classified by looking the ID up. Generated foreign
+// keys enforce that the owner exists.
+func (r *ItemRepository) resolveOwner(owner items.Owner) (items.Owner, error) {
+	if owner.Kind != "" {
+		if !owner.Kind.Valid() {
+			return items.Owner{}, fmt.Errorf("invalid item owner kind %q", owner.Kind)
 		}
-		return kind, nil
+		return owner, nil
 	}
 	var room, character bool
-	err := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM room_definitions WHERE room_id=$1), EXISTS(SELECT 1 FROM characters WHERE id::text=$1)`, id).Scan(&room, &character)
+	err := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM room_definitions WHERE room_id=$1), EXISTS(SELECT 1 FROM characters WHERE id::text=$1)`, owner.ID).Scan(&room, &character)
 	if err != nil {
-		return "", fmt.Errorf("resolve item owner: %w", err)
+		return items.Owner{}, fmt.Errorf("resolve item owner: %w", err)
 	}
 	if room == character {
-		return "", fmt.Errorf("item owner %q must identify exactly one existing room or character; specify owner kind for ambiguous IDs", id)
+		return items.Owner{}, fmt.Errorf("item %s must identify exactly one existing room or character; specify owner kind for ambiguous IDs", owner)
 	}
 	if room {
-		return items.OwnerRoom, nil
+		return items.RoomOwner(owner.ID), nil
 	}
-	return items.OwnerCharacter, nil
+	return items.CharacterOwner(owner.ID), nil
 }
 
 func (r *ItemRepository) CreateItemInstance(item *items.ItemInstance) error {
-	kind, err := r.resolveOwner(item.OwnerID, item.OwnerKind)
+	owner, err := r.resolveOwner(item.Owner)
 	if err != nil {
 		return err
 	}
@@ -48,11 +50,11 @@ func (r *ItemRepository) CreateItemInstance(item *items.ItemInstance) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec(`INSERT INTO item_instances (id,template_id,owner_kind,owner_id,quantity,durability,enchantments,custom_name,modifications,created_at,last_used) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, item.ID, item.TemplateID, kind, item.OwnerID, item.Quantity, item.Durability, enchantments, item.CustomName, modifications, item.CreatedAt, sql.NullTime{Time: item.LastUsed, Valid: !item.LastUsed.IsZero()})
+	_, err = r.db.Exec(`INSERT INTO item_instances (id,template_id,owner_kind,owner_id,quantity,durability,enchantments,custom_name,modifications,created_at,last_used) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, item.ID, item.TemplateID, owner.Kind, owner.ID, item.Quantity, item.Durability, enchantments, item.CustomName, modifications, item.CreatedAt, sql.NullTime{Time: item.LastUsed, Valid: !item.LastUsed.IsZero()})
 	if err != nil {
 		return fmt.Errorf("create item instance: %w", err)
 	}
-	item.OwnerKind = kind
+	item.Owner = owner
 	return nil
 }
 
@@ -64,7 +66,7 @@ func scanItem(row itemScanner) (*items.ItemInstance, error) {
 	item := &items.ItemInstance{}
 	var enchantments, modifications []byte
 	var lastUsed sql.NullTime
-	if err := row.Scan(&item.ID, &item.TemplateID, &item.OwnerKind, &item.OwnerID, &item.Quantity, &item.Durability, &enchantments, &item.CustomName, &modifications, &item.CreatedAt, &lastUsed); err != nil {
+	if err := row.Scan(&item.ID, &item.TemplateID, &item.Owner.Kind, &item.Owner.ID, &item.Quantity, &item.Durability, &enchantments, &item.CustomName, &modifications, &item.CreatedAt, &lastUsed); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(enchantments, &item.Enchantments); err != nil {
@@ -86,7 +88,7 @@ func (r *ItemRepository) GetItemInstance(id string) (*items.ItemInstance, error)
 }
 
 func (r *ItemRepository) UpdateItemInstance(item *items.ItemInstance) error {
-	kind, err := r.resolveOwner(item.OwnerID, item.OwnerKind)
+	owner, err := r.resolveOwner(item.Owner)
 	if err != nil {
 		return err
 	}
@@ -98,11 +100,11 @@ func (r *ItemRepository) UpdateItemInstance(item *items.ItemInstance) error {
 	if err != nil {
 		return err
 	}
-	result, err := r.db.Exec(`UPDATE item_instances SET template_id=$2,owner_kind=$3,owner_id=$4,quantity=$5,durability=$6,enchantments=$7,custom_name=$8,modifications=$9,last_used=$10 WHERE id=$1`, item.ID, item.TemplateID, kind, item.OwnerID, item.Quantity, item.Durability, enchantments, item.CustomName, modifications, sql.NullTime{Time: item.LastUsed, Valid: !item.LastUsed.IsZero()})
+	result, err := r.db.Exec(`UPDATE item_instances SET template_id=$2,owner_kind=$3,owner_id=$4,quantity=$5,durability=$6,enchantments=$7,custom_name=$8,modifications=$9,last_used=$10 WHERE id=$1`, item.ID, item.TemplateID, owner.Kind, owner.ID, item.Quantity, item.Durability, enchantments, item.CustomName, modifications, sql.NullTime{Time: item.LastUsed, Valid: !item.LastUsed.IsZero()})
 	if err := requireItemUpdate(result, err); err != nil {
 		return err
 	}
-	item.OwnerKind = kind
+	item.Owner = owner
 	return nil
 }
 
@@ -111,14 +113,14 @@ func (r *ItemRepository) DeleteItemInstance(id string) error {
 	return requireItemUpdate(result, err)
 }
 
-func (r *ItemRepository) GetPlayerItems(id string) ([]*items.ItemInstance, error) {
-	return r.getOwnedItems(items.OwnerCharacter, id)
+func (r *ItemRepository) GetPlayerItems(characterID string) ([]*items.ItemInstance, error) {
+	return r.getOwnedItems(items.CharacterOwner(characterID))
 }
-func (r *ItemRepository) GetRoomItems(id string) ([]*items.ItemInstance, error) {
-	return r.getOwnedItems(items.OwnerRoom, id)
+func (r *ItemRepository) GetRoomItems(roomID string) ([]*items.ItemInstance, error) {
+	return r.getOwnedItems(items.RoomOwner(roomID))
 }
-func (r *ItemRepository) getOwnedItems(kind items.OwnerKind, id string) ([]*items.ItemInstance, error) {
-	rows, err := r.db.Query(`SELECT `+itemColumns+` FROM item_instances WHERE owner_kind=$1 AND owner_id=$2 ORDER BY id`, kind, id)
+func (r *ItemRepository) getOwnedItems(owner items.Owner) ([]*items.ItemInstance, error) {
+	rows, err := r.db.Query(`SELECT `+itemColumns+` FROM item_instances WHERE owner_kind=$1 AND owner_id=$2 ORDER BY id`, owner.Kind, owner.ID)
 	if err != nil {
 		return nil, fmt.Errorf("list item instances: %w", err)
 	}
@@ -137,11 +139,11 @@ func (r *ItemRepository) getOwnedItems(kind items.OwnerKind, id string) ([]*item
 // TransferItem preserves the legacy repository API for valid unambiguous owners.
 // Gameplay's conditional pickup/drop operations are introduced separately in #10.
 func (r *ItemRepository) TransferItem(id, newOwnerID string) error {
-	kind, err := r.resolveOwner(newOwnerID, "")
+	owner, err := r.resolveOwner(items.Owner{ID: newOwnerID})
 	if err != nil {
 		return err
 	}
-	result, err := r.db.Exec(`UPDATE item_instances SET owner_kind=$1,owner_id=$2 WHERE id=$3`, kind, newOwnerID, id)
+	result, err := r.db.Exec(`UPDATE item_instances SET owner_kind=$1,owner_id=$2 WHERE id=$3`, owner.Kind, owner.ID, id)
 	return requireItemUpdate(result, err)
 }
 
