@@ -61,8 +61,8 @@ func (s *World) Move(characterID, direction string) world.Result {
 	}
 	result := world.Reply(characterID, append([]string{fmt.Sprintf("You move %s.", direction)}, s.describe(destination, actor.ID)...)...)
 	result.Messages = append(result.Messages,
-		world.Message{Scope: world.ToRoom, RoomID: room.ID, ExcludeCharacterID: actor.ID, Text: fmt.Sprintf("%s leaves %s.", actor.Name, direction)},
-		world.Message{Scope: world.ToRoom, RoomID: destination.ID, ExcludeCharacterID: actor.ID, Text: fmt.Sprintf("%s arrives.", actor.Name)},
+		world.RoomMessage(room.ID, fmt.Sprintf("%s leaves %s.", actor.Name, direction), actor.ID),
+		world.RoomMessage(destination.ID, fmt.Sprintf("%s arrives.", actor.Name), actor.ID),
 	)
 	return result
 }

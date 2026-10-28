@@ -48,13 +48,29 @@ type DeliveryReport struct {
 // Message describes recipients without depending on network connections.
 // SessionID pins private content to the session selected during name resolution.
 type Message struct {
-	SessionID          string
-	Report             *DeliveryReport
-	Scope              Scope
-	CharacterID        string
-	RoomID             string
-	ExcludeCharacterID string
-	Text               string
+	SessionID           string
+	Report              *DeliveryReport
+	Scope               Scope
+	CharacterID         string
+	RoomID              string
+	ExcludeCharacterIDs []string // ToRoom: Characters in the Room who don't receive it
+	Text                string
+}
+
+// RoomMessage addresses text to everyone in a Room except the listed Characters,
+// e.g. the actor, or both sides of a give.
+func RoomMessage(roomID, text string, except ...string) Message {
+	return Message{Scope: ToRoom, RoomID: roomID, ExcludeCharacterIDs: except, Text: text}
+}
+
+// Excludes reports whether a room message leaves out the given Character.
+func (m Message) Excludes(characterID string) bool {
+	for _, id := range m.ExcludeCharacterIDs {
+		if id == characterID {
+			return true
+		}
+	}
+	return false
 }
 
 type Result struct{ Messages []Message }

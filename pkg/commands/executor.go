@@ -48,6 +48,14 @@ func (e *Executor) SetPresence(presence world.Presence) { e.worldActions.SetPres
 
 // ExecuteAction returns addressed delivery effects; Execute preserves actor-only callers.
 func (e *Executor) ExecuteAction(cmd *Command) (world.Result, error) {
+	// give takes exactly an item and a character; anything else gets its usage
+	// line rather than the generic syntax error.
+	if cmd.Verb == "give" {
+		if len(cmd.Args) != 2 {
+			return world.Reply(cmd.CharacterID, actions.GiveUsage), nil
+		}
+		return e.worldActions.Give(cmd.CharacterID, cmd.Args[0], cmd.Args[1]), nil
+	}
 	if cmd.Type != CommandUnknown && cmd.ValidateArgs() {
 		if cmd.Type == CommandMovement {
 			return e.worldActions.Move(cmd.CharacterID, cmd.Verb), nil
@@ -131,7 +139,6 @@ func (e *Executor) initializeHandlers() {
 	// Inventory handlers
 	e.handlers["inventory"] = &InventoryHandler{repoManager: e.repoManager, templates: e.templates}
 	// get and drop run only through ExecuteAction, which delivers their room messages.
-	e.handlers["give"] = &GiveHandler{repoManager: e.repoManager}
 	e.handlers["wear"] = &WearHandler{repoManager: e.repoManager}
 	e.handlers["remove"] = &RemoveHandler{repoManager: e.repoManager}
 
@@ -307,16 +314,6 @@ func (h *InventoryHandler) Execute(cmd *Command) ([]string, error) {
 	}
 
 	return response, nil
-}
-
-type GiveHandler struct {
-	repoManager interfaces.RepositoryManager
-}
-
-func (h *GiveHandler) Execute(cmd *Command) ([]string, error) {
-	item := cmd.Args[0]
-	target := cmd.Args[1]
-	return []string{fmt.Sprintf("You give %s to %s.", item, target)}, nil
 }
 
 type WearHandler struct {

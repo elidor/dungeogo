@@ -38,7 +38,7 @@ func (s *World) localMessage(characterID, verb, text string) world.Result {
 		recipient = fmt.Sprintf("%s says: %s", actor.Name, text)
 	}
 	result := world.Reply(characterID, sender)
-	result.Messages = append(result.Messages, world.Message{Scope: world.ToRoom, RoomID: room.ID, ExcludeCharacterID: characterID, Text: recipient})
+	result.Messages = append(result.Messages, world.RoomMessage(room.ID, recipient, characterID))
 	return result
 }
 
@@ -56,33 +56,22 @@ func (s *World) Tell(characterID, target, text string) world.Result {
 	if s.presence == nil {
 		return world.Reply(characterID, unavailable)
 	}
+	online := s.presence.Characters()
 	var sender *world.OnlineCharacter
-	var matches []world.OnlineCharacter
-	var exact *world.OnlineCharacter
-	for _, c := range s.presence.Characters() {
+	for _, c := range online {
 		if c.ID == characterID {
 			copy := c
 			sender = &copy
-		}
-		if strings.EqualFold(c.Name, target) {
-			matches = append(matches, c)
-		}
-		if c.Name == target {
-			copy := c
-			exact = &copy
 		}
 	}
 	if sender == nil {
 		return world.Reply(characterID, "You cannot send a private message right now.")
 	}
-	var recipient world.OnlineCharacter
-	if exact != nil {
-		recipient = *exact
-	} else if len(matches) == 1 {
-		recipient = matches[0]
-	} else if len(matches) > 1 {
+	recipient, found, ambiguous := matchCharacter(online, target)
+	if ambiguous {
 		return world.Reply(characterID, "More than one online character matches; use the exact capitalization of the character name.")
-	} else {
+	}
+	if !found {
 		return world.Reply(characterID, unavailable)
 	}
 	if recipient.SessionID == "" {
@@ -93,4 +82,27 @@ func (s *World) Tell(characterID, target, text string) world.Result {
 		Text:   fmt.Sprintf("%s tells you: %s", sender.Name, text),
 		Report: &world.DeliveryReport{CharacterID: characterID, Success: fmt.Sprintf("You tell %s: %s", recipient.Name, text), Failure: unavailable},
 	}}}
+}
+
+// matchCharacter finds the Character a player named among candidates. Names
+// match ignoring case; if several do, an exact-case match wins, and otherwise
+// the name is ambiguous.
+func matchCharacter(candidates []world.OnlineCharacter, name string) (match world.OnlineCharacter, found, ambiguous bool) {
+	var matches []world.OnlineCharacter
+	for _, c := range candidates {
+		if c.Name == name {
+			return c, true, false
+		}
+		if strings.EqualFold(c.Name, name) {
+			matches = append(matches, c)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return world.OnlineCharacter{}, false, false
+	case 1:
+		return matches[0], true, false
+	default:
+		return world.OnlineCharacter{}, false, true
+	}
 }

@@ -133,7 +133,7 @@ func (p *Parser) initializeCommands() {
 	p.addCommand("inventory", CommandInventory, "Show your inventory", "inventory", 0, 0, []string{"i", "inv"})
 	p.addCommand("get", CommandInventory, "Pick up an item", "get <item>", 1, 1, []string{"take"})
 	p.addCommand("drop", CommandInventory, "Drop an item", "drop <item>", 1, 1, []string{})
-	p.addCommand("give", CommandInventory, "Give an item to someone", "give <item> <player>", 2, 2, []string{})
+	p.addCommand("give", CommandInventory, "Give an item to someone in the room", "give <item> <character>", 2, 2, []string{})
 	p.addCommand("wear", CommandInventory, "Wear/wield an item", "wear <item>", 1, 1, []string{"wield", "equip"})
 	p.addCommand("remove", CommandInventory, "Remove worn item", "remove <item>", 1, 1, []string{"unwield"})
 	

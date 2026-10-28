@@ -2,6 +2,7 @@ package actions
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/elidor/dungeogo/pkg/game/character"
 	"github.com/elidor/dungeogo/pkg/game/items"
@@ -116,9 +117,73 @@ func (s *World) moveItem(characterID, input string, m itemMove) world.Result {
 	}
 	short := s.templates.ShortDescription(item)
 	result := world.Reply(characterID, fmt.Sprintf("You %s %s.", m.actorVerb, short))
-	result.Messages = append(result.Messages, world.Message{
-		Scope: world.ToRoom, RoomID: room.ID, ExcludeCharacterID: actor.ID,
-		Text: fmt.Sprintf("%s %s %s.", actor.Name, m.roomVerb, short),
-	})
+	result.Messages = append(result.Messages, world.RoomMessage(room.ID, fmt.Sprintf("%s %s %s.", actor.Name, m.roomVerb, short), actor.ID))
 	return result
 }
+
+// Give moves an Item from the actor to another Character in the same Room. The
+// recipient must be online and present there under the same action lock as
+// movement; the transfer is the conditional write, and the giver, recipient
+// and onlookers are told only after it commits.
+func (s *World) Give(characterID, itemInput, recipientName string) world.Result {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	const unable = "You can't give anything right now."
+	target, err := items.ParseTarget(itemInput)
+	recipientName = strings.TrimSpace(recipientName)
+	if err != nil || recipientName == "" {
+		return world.Reply(characterID, GiveUsage)
+	}
+	actor, err := s.repositories.Characters().GetCharacter(characterID)
+	if err != nil || actor.Location == nil {
+		return world.Reply(characterID, unable)
+	}
+	room, ok := s.presentRoom(actor)
+	if !ok {
+		return world.Reply(characterID, unable)
+	}
+	var here []world.OnlineCharacter
+	if s.presence != nil {
+		for _, c := range s.presence.Characters() {
+			if c.RoomID == room.ID && c.ZoneID == room.ZoneID {
+				here = append(here, c)
+			}
+		}
+	}
+	recipient, found, ambiguous := matchCharacter(here, recipientName)
+	switch {
+	case ambiguous:
+		return world.Reply(characterID, "More than one character here has that name; use its exact capitalization.")
+	case !found:
+		return world.Reply(characterID, fmt.Sprintf("There's no one called '%s' here.", recipientName))
+	case recipient.ID == actor.ID:
+		return world.Reply(characterID, "You can't give something to yourself.")
+	}
+	carried, err := s.repositories.Items().GetPlayerItems(actor.ID)
+	if err != nil {
+		s.logger.Printf("item give unavailable: character=%s: %v", actor.ID, err)
+		return world.Reply(characterID, unable)
+	}
+	item, found := target.Pick(carried, s.templates)
+	if !found {
+		return world.Reply(characterID, fmt.Sprintf("You aren't carrying a '%s'.", target))
+	}
+	moved, err := s.repositories.Items().TransferItem(item.ID, items.CharacterOwner(actor.ID), items.CharacterOwner(recipient.ID))
+	if err != nil {
+		s.logger.Printf("item give failed: character=%s item=%s recipient=%s: %v", actor.ID, item.ID, recipient.ID, err)
+		return world.Reply(characterID, unable)
+	}
+	if !moved {
+		return world.Reply(characterID, fmt.Sprintf("You aren't carrying the %s any more.", s.templates.DisplayName(item)))
+	}
+	short := s.templates.ShortDescription(item)
+	result := world.Reply(characterID, fmt.Sprintf("You give %s to %s.", short, recipient.Name))
+	result.Messages = append(result.Messages,
+		world.Message{Scope: world.ToCharacter, CharacterID: recipient.ID, SessionID: recipient.SessionID, Text: fmt.Sprintf("%s gives you %s.", actor.Name, short)},
+		world.RoomMessage(room.ID, fmt.Sprintf("%s gives %s to %s.", actor.Name, short, recipient.Name), actor.ID, recipient.ID),
+	)
+	return result
+}
+
+// GiveUsage is the reply for anything other than give <item> <character>.
+const GiveUsage = "Give what to whom? Use give <item> <character>, e.g. give sword Bo."

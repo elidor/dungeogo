@@ -146,7 +146,7 @@ func (r *SessionRegistry) Recipients(message world.Message) []*Client {
 		}
 		matches := message.Scope == world.ToCharacter && c.ID == message.CharacterID && (message.SessionID == "" || message.SessionID == account.client.GetID())
 		if message.Scope == world.ToRoom {
-			matches = c.RoomID == message.RoomID && c.ID != message.ExcludeCharacterID
+			matches = c.RoomID == message.RoomID && !message.Excludes(c.ID)
 		}
 		if matches {
 			recipients = append(recipients, account.client)
