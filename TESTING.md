@@ -264,8 +264,10 @@ DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/server ./pkg/integration ./pk
 
 ## Item ownership and starter seeds
 
-The real migration sequence now includes `004_item_ownership.sql` and
-`005_starter_items.sql`. PostgreSQL tests cover valid versioned and unversioned
+The real migration sequence now includes `004_item_ownership.sql`,
+`005_starter_items.sql` and `006_item_owner_fk_indexes.sql`, which indexes the
+generated owner columns behind the item foreign keys so deleting a room or
+character doesn't scan every item. PostgreSQL tests cover valid versioned and unversioned
 upgrades, preservation of legacy fields and nullable names/timestamps, atomic
 failure for missing or ambiguous owners, foreign-key rejection of invalid owners,
 and distinct room/character queries even when IDs overlap.

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,9 +30,13 @@ func TestBootstrapFreshAndRepeated(t *testing.T) {
 	if err := db.QueryRow(`SELECT description FROM room_definitions WHERE room_id='starting_room'`).Scan(&description); err != nil || description != "Operator edit" {
 		t.Fatalf("repeat boot reset world: %q %v", description, err)
 	}
+	scripts, err := filepath.Glob(filepath.Join("..", "..", "..", "migrations", "*.sql"))
+	if err != nil || len(scripts) == 0 {
+		t.Fatalf("list migrations: %v %v", scripts, err)
+	}
 	var count int
-	if err := db.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != 5 {
-		t.Fatalf("migration count %d: %v", count, err)
+	if err := db.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != len(scripts) {
+		t.Fatalf("migration count %d, want %d (each applied exactly once): %v", count, len(scripts), err)
 	}
 	if err := db.QueryRow(`SELECT count(*) FROM item_instances WHERE template_id='keepsake' AND owner_kind='room' AND owner_id='newbie_west'`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("item count %d: %v", count, err)
