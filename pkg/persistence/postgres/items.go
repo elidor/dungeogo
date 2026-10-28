@@ -37,24 +37,47 @@ func (r *ItemRepository) resolveOwner(owner items.Owner) (items.Owner, error) {
 	return items.CharacterOwner(owner.ID), nil
 }
 
-func (r *ItemRepository) CreateItemInstance(item *items.ItemInstance) error {
+// storedItem is an Item's fields in the form both create and update write.
+type storedItem struct {
+	owner         items.Owner
+	enchantments  []byte
+	modifications []byte
+	lastUsed      sql.NullTime
+}
+
+// prepareItem runs the save steps create and update share: resolving the
+// Owner and serializing the fields stored as JSON or nullable columns.
+func (r *ItemRepository) prepareItem(item *items.ItemInstance) (storedItem, error) {
 	owner, err := r.resolveOwner(item.Owner)
 	if err != nil {
-		return err
+		return storedItem{}, err
 	}
 	enchantments, err := json.Marshal(item.Enchantments)
 	if err != nil {
-		return err
+		return storedItem{}, err
 	}
 	modifications, err := json.Marshal(item.Modifications)
 	if err != nil {
+		return storedItem{}, err
+	}
+	return storedItem{
+		owner:         owner,
+		enchantments:  enchantments,
+		modifications: modifications,
+		lastUsed:      sql.NullTime{Time: item.LastUsed, Valid: !item.LastUsed.IsZero()},
+	}, nil
+}
+
+func (r *ItemRepository) CreateItemInstance(item *items.ItemInstance) error {
+	stored, err := r.prepareItem(item)
+	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec(`INSERT INTO item_instances (id,template_id,owner_kind,owner_id,quantity,durability,enchantments,custom_name,modifications,created_at,last_used) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, item.ID, item.TemplateID, owner.Kind, owner.ID, item.Quantity, item.Durability, enchantments, item.CustomName, modifications, item.CreatedAt, sql.NullTime{Time: item.LastUsed, Valid: !item.LastUsed.IsZero()})
+	_, err = r.db.Exec(`INSERT INTO item_instances (id,template_id,owner_kind,owner_id,quantity,durability,enchantments,custom_name,modifications,created_at,last_used) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, item.ID, item.TemplateID, stored.owner.Kind, stored.owner.ID, item.Quantity, item.Durability, stored.enchantments, item.CustomName, stored.modifications, item.CreatedAt, stored.lastUsed)
 	if err != nil {
 		return fmt.Errorf("create item instance: %w", err)
 	}
-	item.Owner = owner
+	item.Owner = stored.owner
 	return nil
 }
 
@@ -88,23 +111,15 @@ func (r *ItemRepository) GetItemInstance(id string) (*items.ItemInstance, error)
 }
 
 func (r *ItemRepository) UpdateItemInstance(item *items.ItemInstance) error {
-	owner, err := r.resolveOwner(item.Owner)
+	stored, err := r.prepareItem(item)
 	if err != nil {
 		return err
 	}
-	enchantments, err := json.Marshal(item.Enchantments)
-	if err != nil {
-		return err
-	}
-	modifications, err := json.Marshal(item.Modifications)
-	if err != nil {
-		return err
-	}
-	result, err := r.db.Exec(`UPDATE item_instances SET template_id=$2,owner_kind=$3,owner_id=$4,quantity=$5,durability=$6,enchantments=$7,custom_name=$8,modifications=$9,last_used=$10 WHERE id=$1`, item.ID, item.TemplateID, owner.Kind, owner.ID, item.Quantity, item.Durability, enchantments, item.CustomName, modifications, sql.NullTime{Time: item.LastUsed, Valid: !item.LastUsed.IsZero()})
+	result, err := r.db.Exec(`UPDATE item_instances SET template_id=$2,owner_kind=$3,owner_id=$4,quantity=$5,durability=$6,enchantments=$7,custom_name=$8,modifications=$9,last_used=$10 WHERE id=$1`, item.ID, item.TemplateID, stored.owner.Kind, stored.owner.ID, item.Quantity, item.Durability, stored.enchantments, item.CustomName, stored.modifications, stored.lastUsed)
 	if err := requireItemUpdate(result, err); err != nil {
 		return err
 	}
-	item.Owner = owner
+	item.Owner = stored.owner
 	return nil
 }
 
