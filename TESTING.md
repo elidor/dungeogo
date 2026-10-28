@@ -313,3 +313,22 @@ is listed last (migration `008_item_arrival_order.sql`).
 ```bash
 DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 ./pkg/integration ./pkg/game/... ./pkg/persistence/postgres
 ```
+
+## Session lifecycle and shutdown
+
+`pkg/server/connection_manager_test.go` covers the connection manager with stub
+handlers under the race detector: shutdown stops accepting, closes every session
+and returns only after each handler has finished (including in-flight work);
+an overrunning session makes `Shutdown` return an error naming it; a disconnected
+session leaves the client list immediately rather than at the next sweep; an idle
+session is closed while an active one survives; and a full server turns away
+extra connections. `TestLifecycle_IdleExpiryRemovesPresenceAndShutdownWaits` runs
+the real session handler behind the connection manager: an idle character drops
+out of `who` while an active one stays, then shutdown closes the rest.
+`cmd/server/main_test.go` sends the process SIGTERM and checks `serve` closes the
+database and exits 0, or 1 when closing fails.
+
+```bash
+go test -race -count=1 ./pkg/server ./cmd/server
+DUNGEOGO_REQUIRE_DB=1 go test -race -count=1 -run TestLifecycle ./pkg/integration
+```

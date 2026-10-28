@@ -42,7 +42,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer repoManager.Close()
 
 	startingRoom := cfg.GetValue(config.StartingRoom)
 	if startingRoom == "" {
@@ -51,6 +50,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	if err := repoManager.Bootstrap(ctx, startingRoom); err != nil {
 		cancel()
+		repoManager.Close()
 		log.Fatalf("Failed to initialize world: %v", err)
 	}
 	cancel()
@@ -67,22 +67,51 @@ func main() {
 	connectionManager := server.NewConnectionManager(100, 30*time.Minute)
 	connectionManager.SetHandler(sessionHandler)
 
-	// Start server
+	os.Exit(serve(connectionManager, address, repoManager))
+}
+
+// serve runs the server until it fails or receives SIGINT/SIGTERM, then shuts
+// down in order: stop accepting, close sessions and wait for their in-flight
+// commands, then close the database. It returns the process exit code; any
+// failure along the way is logged and makes it nonzero.
+func serve(connections *server.ConnectionManager, address string, repositories interface{ Close() error }) int {
+	// Catch signals before serving, so one that arrives during startup still
+	// shuts down in order instead of killing the process.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(signals)
+
 	log.Printf("Starting DungeoGo server on %s", address)
+	served := make(chan error, 1)
+	go func() { served <- connections.Start(address) }()
 
-	// Handle graceful shutdown
-	go func() {
-		sigchan := make(chan os.Signal, 1)
-		signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
-		<-sigchan
-
-		log.Println("Shutting down server...")
-		connectionManager.Stop()
-		os.Exit(0)
-	}()
-
-	// Start accepting connections
-	if err := connectionManager.Start(address); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	code := 0
+	select {
+	case err := <-served:
+		log.Printf("Server stopped: %v", err)
+		code = 1
+		if err := connections.Stop(); err != nil {
+			log.Printf("Shutdown failed: %v", err)
+		}
+	case sig := <-signals:
+		log.Printf("Received %s; shutting down...", sig)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		if err := connections.Shutdown(ctx); err != nil {
+			log.Printf("Shutdown failed: %v", err)
+			code = 1
+		}
+		cancel()
+		if err := <-served; err != nil {
+			log.Printf("Server stopped with error: %v", err)
+			code = 1
+		}
 	}
+	if err := repositories.Close(); err != nil {
+		log.Printf("Closing database failed: %v", err)
+		code = 1
+	}
+	if code == 0 {
+		log.Println("Shutdown complete.")
+	}
+	return code
 }
